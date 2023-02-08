@@ -15,11 +15,22 @@ import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
 import android.widget.Button
+import android.widget.TextView
 import androidx.fragment.app.Fragment
 import smile.classification.OneVersusRest
+import smile.classification.ovr
+import smile.classification.svm
 import java.util.*
 
+import java.io.*
+import smile.*
+import smile.data.*
+import smile.classification.*
+import smile.math.kernel.*
+import smile.validation.*
 import smile.math.MathEx.*
+import smile.math.kernel.GaussianKernel
+import smile.validation.metric.Accuracy
 
 
 data class Dataset(val x: Array<DoubleArray>, val y: IntArray)
@@ -35,6 +46,7 @@ enum class GestureType(val str: String) {
 class ScannerFragment : Fragment() {
     private lateinit var startButton: Button
     private lateinit var stopButton: Button
+    private lateinit var svmTextView: TextView
 
     private var btManager: BluetoothManager? = null
     private var btAdapter: BluetoothAdapter? = null
@@ -56,7 +68,7 @@ class ScannerFragment : Fragment() {
     private val datasetY = IntArray(datasetSize)
 
     // SVM model
-    private val model: OneVersusRest<Double>? = null
+    private var model: OneVersusRest<DoubleArray>? = null
 
     override fun onCreateView(
         inflater: LayoutInflater, container: ViewGroup?,
@@ -65,6 +77,7 @@ class ScannerFragment : Fragment() {
         val view = inflater.inflate(R.layout.fragment_scanner, container, false)
         initViews(view)
         setUpBluetoothManager()
+        loadSVM()
         return view
     }
 
@@ -74,6 +87,7 @@ class ScannerFragment : Fragment() {
     }
 
     private fun initViews(view: View) {
+        svmTextView = view.findViewById(R.id.svm_data_status)
         startButton = view.findViewById(R.id.startButton)
         stopButton = view.findViewById(R.id.stopButton)
         startButton.setOnClickListener { onStartScannerButtonClick() }
@@ -163,6 +177,128 @@ class ScannerFragment : Fragment() {
         }
     }
 
+    private fun writeData(x: Array<DoubleArray>, y: IntArray) {
+        var fileOutputStream: FileOutputStream
+        try {
+            fileOutputStream = this.context?.openFileOutput("x.txt", Context.MODE_PRIVATE)!!
+            val objectOutputStream = ObjectOutputStream(fileOutputStream)
+            objectOutputStream.writeObject(x)
+            objectOutputStream.close()
+            Log.e("MACROSNAP","Write data success.")
+        } catch (e: Exception){
+            e.printStackTrace()
+        }
+
+        try {
+            fileOutputStream = this.context?.openFileOutput("y.txt", Context.MODE_PRIVATE)!!
+            val objectOutputStream = ObjectOutputStream(fileOutputStream)
+            objectOutputStream.writeObject(y)
+            objectOutputStream.close()
+            Log.e("MACROSNAP","Write data success.")
+        } catch (e: Exception){
+            e.printStackTrace()
+        }
+    }
+
+    private fun readData(): Dataset {
+        var fileInputStream: FileInputStream? = null
+        fileInputStream = this.context?.openFileInput("x.txt")
+        var objectInputStream = ObjectInputStream(fileInputStream)
+        val x: Array<DoubleArray> = objectInputStream.readObject() as Array<DoubleArray>
+        objectInputStream.close()
+
+        fileInputStream = this.context?.openFileInput("y.txt")
+        objectInputStream = ObjectInputStream(fileInputStream)
+        val y: IntArray = objectInputStream.readObject() as IntArray
+        objectInputStream.close()
+
+        return Dataset(x, y)
+    }
+
+    private fun loadSVM() {
+        val xFile = File(this.context?.filesDir,"x.txt")
+        val yFile = File(this.context?.filesDir,"y.txt")
+        if(xFile.exists() && yFile.exists()){
+            Log.e("MACROSNAP","Dataset files found.")
+            svmTextView.text = "Dataset files exist"
+        } else {
+            Log.e("MACROSNAP","Dataset files not found.")
+            svmTextView.text = "Dataset files does not exist"
+            val data = Array<DoubleArray>(10){doubleArrayOf(0.0)}
+            data[0] = doubleArrayOf(45.0,14.0,164900.0,116910.0,48.7392861,133.930123 )
+            data[1] = doubleArrayOf(43.0,12.0,138633.333,116910.0,30.9357145,138.55321)
+            data[2] = doubleArrayOf(66.0,21.0,151266.667,120633.333,57.3142861,139.144051)
+            data[3] = doubleArrayOf(47.0,10.0,128500.0,120633.333,23.0073691,123.355951)
+            data[4] = doubleArrayOf(40.0,9.0,148766.667,122181.667,43.8676314,122.667478)
+            data[5] = doubleArrayOf(146.0,66.0,138566.667,126548.333,20.0705358,109.957522)
+            data[6] = doubleArrayOf(118.0,71.0,134733.333,128621.667,27.4578573,83.9544647)
+            data[7] = doubleArrayOf(138.0,63.0,127533.333,137826.333,15.9874061,43.041923)
+            data[8] = doubleArrayOf(150.0,86.0,109466.667,141869.667,14.8142858,35.7447188)
+            data[9] = doubleArrayOf(128.0,72.0,96800.0,141120.333,15.6678573,37.8162068)
+
+            val labels = IntArray(10)
+            labels[0] = 0
+            labels[1] = 1
+            labels[2] = 2
+            labels[3] = 3
+            labels[4] = 4
+            labels[5] = 5
+            labels[6] = 6
+            labels[7] = 7
+            labels[8] = 8
+            labels[9] = 9
+
+            writeData(data, labels)
+        }
+        val (x, y) = readData()
+
+        val kernel = GaussianKernel(1/6.0)  // gamma = 1/num_features
+        model = ovr(x, y, { x, y -> svm(x, y, kernel, 1.0, 1E-3) })
+//        var pred = CrossValidation.classification(10, x, y, {a, b -> ovr(a, b, { c, d -> svm(c, d, kernel, 5.0, 1E-3) })})
+        val acc = Accuracy.of(y, model!!.predict(x))
+        Log.e("MACROSNAP", "SVM acc: $acc")
+//        println(Accuracy.of(y, model.predict(x)))
+//        println(Accuracy.of(y, model.predict(x)))
+//        println(ConfusionMatrix.of(y, model.predict(x)))
+    }
+
+    private fun preprocessData(): DoubleArray {
+        // segment data
+        val fsr1Filtered = mutableListOf<Double>()
+        val fsr2Filtered = mutableListOf<Double>()
+        val fsr3Filtered = mutableListOf<Double>()
+        val fsrMax = doubleArrayOf(max(fsr1Data), max(fsr2Data), max(fsr3Data))
+        val whichFsrMax = whichMax(fsrMax)
+        val filterThreshold = 0.4 * fsrMax[whichFsrMax]
+        val filterFsrTarget = when (whichFsrMax) {
+            1 -> {
+                fsr1Data
+            }
+            2 -> {
+                fsr2Data
+            }
+            else -> {
+                fsr3Data
+            }
+        }
+        for (i in filterFsrTarget.indices) {
+            if (filterFsrTarget[i] >= filterThreshold) {
+                fsr1Filtered.add(fsr1Data[i])
+                fsr2Filtered.add(fsr2Data[i])
+                fsr3Filtered.add(fsr3Data[i])
+            }
+        }
+        // calculate mean and std
+        return doubleArrayOf(
+            mean(fsr1Filtered.toDoubleArray()),
+            mean(fsr2Filtered.toDoubleArray()),
+            mean(fsr3Filtered.toDoubleArray()),
+            sd(fsr1Filtered.toDoubleArray()),
+            sd(fsr2Filtered.toDoubleArray()),
+            sd(fsr3Filtered.toDoubleArray())
+        )
+    }
+
     @OptIn(ExperimentalUnsignedTypes::class)
     private val leScanCallback: ScanCallback = object : ScanCallback() {
         override fun onScanResult(callbackType: Int, result: ScanResult) {
@@ -223,43 +359,6 @@ class ScannerFragment : Fragment() {
 
         override fun onScanFailed(errorCode: Int) {
             Log.e("MACROSNAP", errorCode.toString())
-        }
-
-        private fun preprocessData(): DoubleArray {
-            // segment data
-            val fsr1Filtered = mutableListOf<Double>()
-            val fsr2Filtered = mutableListOf<Double>()
-            val fsr3Filtered = mutableListOf<Double>()
-            val fsrMax = doubleArrayOf(max(fsr1Data), max(fsr2Data), max(fsr3Data))
-            val whichFsrMax = whichMax(fsrMax)
-            val filterThreshold = 0.4 * fsrMax[whichFsrMax]
-            val filterFsrTarget = when (whichFsrMax) {
-                1 -> {
-                    fsr1Data
-                }
-                2 -> {
-                    fsr2Data
-                }
-                else -> {
-                    fsr3Data
-                }
-            }
-            for (i in filterFsrTarget.indices) {
-                if (filterFsrTarget[i] >= filterThreshold) {
-                    fsr1Filtered.add(fsr1Data[i])
-                    fsr2Filtered.add(fsr2Data[i])
-                    fsr3Filtered.add(fsr3Data[i])
-                }
-            }
-            // calculate mean and std
-            return doubleArrayOf(
-                mean(fsr1Filtered.toDoubleArray()),
-                mean(fsr2Filtered.toDoubleArray()),
-                mean(fsr3Filtered.toDoubleArray()),
-                sd(fsr1Filtered.toDoubleArray()),
-                sd(fsr2Filtered.toDoubleArray()),
-                sd(fsr3Filtered.toDoubleArray())
-            )
         }
     }
 
