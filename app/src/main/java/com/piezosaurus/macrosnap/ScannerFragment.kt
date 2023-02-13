@@ -9,7 +9,6 @@ import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
 import android.os.Bundle
-import android.os.ParcelUuid
 import android.util.Log
 import android.view.LayoutInflater
 import android.view.View
@@ -52,6 +51,7 @@ class ScannerFragment : Fragment() {
     private var btManager: BluetoothManager? = null
     private var btAdapter: BluetoothAdapter? = null
     private var btScanner: BluetoothLeScanner? = null
+    private val scanRestartPeriod: Long = 600000  // restart scan every 10 mins (600000 millisec)
 
     // Calibration
     private var prevCalib: Int = 0
@@ -85,6 +85,12 @@ class ScannerFragment : Fragment() {
         initViews(view)
         setUpBluetoothManager()
         loadSVM()
+        // max continuous scan time is 30 min
+        Timer().scheduleAtFixedRate(object : TimerTask() {
+            override fun run() {
+                restartScanner()
+            }
+        }, scanRestartPeriod, scanRestartPeriod)
         return view
     }
 
@@ -133,6 +139,7 @@ class ScannerFragment : Fragment() {
         if (startButton.visibility == View.GONE) {
             btScanner!!.stopScan(leScanCallback)
             onStartScannerButtonClick()
+            Log.e("MACROSNAP","Restarted scan")
         }
     }
 
