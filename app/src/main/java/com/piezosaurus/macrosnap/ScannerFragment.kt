@@ -47,25 +47,32 @@ class ScannerFragment : Fragment() {
     private lateinit var startButton: Button
     private lateinit var stopButton: Button
     private lateinit var svmTextView: TextView
+    private lateinit var fsrTextView: TextView
 
     private var btManager: BluetoothManager? = null
     private var btAdapter: BluetoothAdapter? = null
     private var btScanner: BluetoothLeScanner? = null
 
+    // Calibration
+    private var prevCalib: Int = 0
+
     // FSR raw values (range 0 to 255)
     // 0 is no force, 255 is high force
+    private var needRestValue: Boolean = true
     private val arraySize: Int = 10
     private var dataIndex: Int = 0
-    private val fsrRestValue = intArrayOf(-1, -1, -1)
-    private val fsr1Data = DoubleArray(arraySize)
-    private val fsr2Data = DoubleArray(arraySize)
-    private val fsr3Data = DoubleArray(arraySize)
+    private val fsrRestValue = doubleArrayOf(0.0, 0.0, 0.0)
+    private val fsr1Data = mutableListOf<Double>()
+    private val fsr2Data = mutableListOf<Double>()
+    private val fsr3Data = mutableListOf<Double>()
 
-    // Store training data
-    private val datasetSize: Int = 10
-    private val datasetIndex: Int = 0
-    private val datasetX = Array<DoubleArray>(datasetSize){doubleArrayOf(0.0)}
-    private val datasetY = IntArray(datasetSize)
+    // Store training data (min 10 samples per gesture)
+    private val datasetSize: Int = 50
+    private var datasetIndex: Int = 0
+    private val datasetX = mutableListOf<DoubleArray>()
+    private val datasetY = mutableListOf<Int>()
+    private var prevGestureLabel: Int = 0
+    private var currGestureCount: Int = 0
 
     // SVM model
     private var model: OneVersusRest<DoubleArray>? = null
@@ -88,6 +95,7 @@ class ScannerFragment : Fragment() {
 
     private fun initViews(view: View) {
         svmTextView = view.findViewById(R.id.svm_data_status)
+        fsrTextView = view.findViewById(R.id.fsr_values)
         startButton = view.findViewById(R.id.startButton)
         stopButton = view.findViewById(R.id.stopButton)
         startButton.setOnClickListener { onStartScannerButtonClick() }
@@ -220,46 +228,16 @@ class ScannerFragment : Fragment() {
         val yFile = File(this.context?.filesDir,"y.txt")
         if(xFile.exists() && yFile.exists()){
             Log.e("MACROSNAP","Dataset files found.")
-            svmTextView.text = "Dataset files exist"
+            svmTextView.text = "Found saved calibration"
+            val (x, y) = readData()
+            trainSVM(x, y)
+            showNormalUI()
         } else {
             Log.e("MACROSNAP","Dataset files not found.")
-            svmTextView.text = "Dataset files does not exist"
-            val data = Array<DoubleArray>(10){doubleArrayOf(0.0)}
-            data[0] = doubleArrayOf(45.0,14.0,164900.0,116910.0,48.7392861,133.930123 )
-            data[1] = doubleArrayOf(43.0,12.0,138633.333,116910.0,30.9357145,138.55321)
-            data[2] = doubleArrayOf(66.0,21.0,151266.667,120633.333,57.3142861,139.144051)
-            data[3] = doubleArrayOf(47.0,10.0,128500.0,120633.333,23.0073691,123.355951)
-            data[4] = doubleArrayOf(40.0,9.0,148766.667,122181.667,43.8676314,122.667478)
-            data[5] = doubleArrayOf(146.0,66.0,138566.667,126548.333,20.0705358,109.957522)
-            data[6] = doubleArrayOf(118.0,71.0,134733.333,128621.667,27.4578573,83.9544647)
-            data[7] = doubleArrayOf(138.0,63.0,127533.333,137826.333,15.9874061,43.041923)
-            data[8] = doubleArrayOf(150.0,86.0,109466.667,141869.667,14.8142858,35.7447188)
-            data[9] = doubleArrayOf(128.0,72.0,96800.0,141120.333,15.6678573,37.8162068)
-
-            val labels = IntArray(10)
-            labels[0] = 0
-            labels[1] = 1
-            labels[2] = 2
-            labels[3] = 3
-            labels[4] = 4
-            labels[5] = 5
-            labels[6] = 6
-            labels[7] = 7
-            labels[8] = 8
-            labels[9] = 9
-
-            writeData(data, labels)
+            svmTextView.text = "Calibration required"
+            // request calibration UI
+            requestCalibrationUI()
         }
-        val (x, y) = readData()
-
-        val kernel = GaussianKernel(1/6.0)  // gamma = 1/num_features
-        model = ovr(x, y, { x, y -> svm(x, y, kernel, 1.0, 1E-3) })
-//        var pred = CrossValidation.classification(10, x, y, {a, b -> ovr(a, b, { c, d -> svm(c, d, kernel, 5.0, 1E-3) })})
-        val acc = Accuracy.of(y, model!!.predict(x))
-        Log.e("MACROSNAP", "SVM acc: $acc")
-//        println(Accuracy.of(y, model.predict(x)))
-//        println(Accuracy.of(y, model.predict(x)))
-//        println(ConfusionMatrix.of(y, model.predict(x)))
     }
 
     private fun preprocessData(): DoubleArray {
@@ -267,7 +245,11 @@ class ScannerFragment : Fragment() {
         val fsr1Filtered = mutableListOf<Double>()
         val fsr2Filtered = mutableListOf<Double>()
         val fsr3Filtered = mutableListOf<Double>()
-        val fsrMax = doubleArrayOf(max(fsr1Data), max(fsr2Data), max(fsr3Data))
+        val fsrMax = doubleArrayOf(
+            max(fsr1Data.toDoubleArray()),
+            max(fsr2Data.toDoubleArray()),
+            max(fsr3Data.toDoubleArray())
+        )
         val whichFsrMax = whichMax(fsrMax)
         val filterThreshold = 0.4 * fsrMax[whichFsrMax]
         val filterFsrTarget = when (whichFsrMax) {
@@ -299,6 +281,66 @@ class ScannerFragment : Fragment() {
         )
     }
 
+    private fun trainSVM(x: Array<DoubleArray>, y: IntArray) {
+        val kernel = GaussianKernel(1/6.0)  // gamma = 1/num_features
+        model = ovr(x, y, { x, y -> svm(x, y, kernel, 1.0, 1E-3) })
+//        var pred = CrossValidation.classification(10, x, y, {a, b -> ovr(a, b, { c, d -> svm(c, d, kernel, 5.0, 1E-3) })})
+        val acc = Accuracy.of(y, model!!.predict(x))
+        Log.e("MACROSNAP", "SVM acc: $acc")
+//        println(Accuracy.of(y, model.predict(x)))
+//        println(ConfusionMatrix.of(y, model.predict(x)))
+        // save dataset
+        val xFile = File(this.context?.filesDir,"x.txt")
+        val yFile = File(this.context?.filesDir,"y.txt")
+        if(!xFile.exists() && !yFile.exists()){
+            writeData(x, y)
+        }
+    }
+
+    private fun emptyData() {
+        dataIndex = 0
+        fsr1Data.clear()
+        fsr2Data.clear()
+        fsr3Data.clear()
+    }
+
+    private fun updateUI(status: Int) {
+        if (status == prevCalib) {
+            // no need to change UI
+            return
+        }
+        if (status == 0) {
+            showNormalUI()
+        }
+        else if (status > 0) {
+            showCalibrationUI(status)
+        }
+        prevCalib = status
+    }
+
+    private fun showNormalUI() {
+        // hide calibration UI
+        // show normal UI elements
+    }
+
+    private fun requestCalibrationUI() {
+        // function called when user does not have saved calibration data
+        // display UI to ask user
+    }
+
+    private fun showCalibrationUI(status: Int) {
+        // hide request calibration UI elements
+        // hide normal UI elements
+        // show calibration UI
+
+        // determine what UI to show based on status which is the calib value
+        // find the progress of each gesture based on currGestureCount
+    }
+
+    private fun runAppIntent(gesture: GestureType) {
+        // run task based on given gesture
+    }
+
     @OptIn(ExperimentalUnsignedTypes::class)
     private val leScanCallback: ScanCallback = object : ScanCallback() {
         override fun onScanResult(callbackType: Int, result: ScanResult) {
@@ -321,38 +363,67 @@ class ScannerFragment : Fragment() {
                         "vbat $battery, fsrs [$fsr1, $fsr2, $fsr3], calib $calib, status $status, connected $connected"
                     )
 
-                    // Code for testing
-                    fsr1Data[dataIndex] = (fsr1.toInt() - fsrRestValue[0]).toDouble() / 255.0
-                    fsr2Data[dataIndex] = (fsr2.toInt() - fsrRestValue[1]).toDouble() / 255.0
-                    fsr3Data[dataIndex] = (fsr3.toInt() - fsrRestValue[2]).toDouble() / 255.0
-                    dataIndex += 1
-                    if (dataIndex >= arraySize) {
-                        val fsrFeatures = preprocessData()
-                        Log.e("MACROSNAP", "Processed features " + fsrFeatures.joinToString())
-                        dataIndex = 0
+                    // only store raw FSR values if
+                    // connected is 1 -> all modules of armband is wired
+                    // status is 1 -> snap was detected
+                    // needRestValue is true -> initial scans being received
+                    if (connected.toInt() == 1  && (status.toInt() == 1 || needRestValue)) {
+                        fsr1Data[dataIndex] = fsr1.toDouble() / 255.0 - fsrRestValue[0]
+                        fsr2Data[dataIndex] = fsr2.toDouble() / 255.0 - fsrRestValue[1]
+                        fsr3Data[dataIndex] = fsr3.toDouble() / 255.0 - fsrRestValue[2]
+                        fsrTextView.text = "FSR1 %.4f FSR2 %.4f FSR3 %.4f".format(fsr1Data[dataIndex], fsr2Data[dataIndex], fsr3Data[dataIndex])
+                        dataIndex += 1
                     }
 
-                    // Actual pipeline logic
-                    /*
-                    if (fsrRestValue[0] == -1 && connected.toInt() == 1) {
-                        // first scan value used for normalization
-                        fsrRestValue[0] = fsr1.toInt()
-                        fsrRestValue[1] = fsr2.toInt()
-                        fsrRestValue[2] = fsr3.toInt()
+                    // store average scan value used for normalization
+                    if (dataIndex >= arraySize && needRestValue) {
+                        fsrRestValue[0] = mean(fsr1Data.toDoubleArray())
+                        fsrRestValue[1] = mean(fsr2Data.toDoubleArray())
+                        fsrRestValue[2] = mean(fsr3Data.toDoubleArray())
+                        Log.e("MACROSNAP", "Average rest values " + fsrRestValue.joinToString())
+                        needRestValue = false
+                        // reset list
+                        emptyData()
                     }
-                    else if (fsrRestValue[0] != -1) {
-                        fsr1Data[dataIndex] = (fsr1.toInt() - fsrRestValue[0]).toDouble() / 255.0
-                        fsr2Data[dataIndex] = (fsr2.toInt() - fsrRestValue[1]).toDouble() / 255.0
-                        fsr3Data[dataIndex] = (fsr3.toInt() - fsrRestValue[2]).toDouble() / 255.0
-                        dataIndex += 1
-                        Log.e("MACROSNAP", "Processed features $fsr1Data, $fsr2Data, $fsr3Data")
-                        if (dataIndex >= arraySize) {
-                            val fsrFeatures = preprocessData()
-                            Log.e("MACROSNAP", "Processed features $fsrFeatures")
-                            dataIndex = 0
+
+                    // run prediction
+                    if (dataIndex >= arraySize && status.toInt() == 1 && calib.toInt() == 0) {
+                        val fsrFeatures = preprocessData()
+                        Log.e("MACROSNAP", "Processed features " + fsrFeatures.joinToString())
+                        // run svm
+                        val pred = model!!.predict(fsrFeatures)  // type int
+                        val gesture = GestureType.values()[pred]
+                        Log.e("MACROSNAP", "Predicted gesture " + gesture.str)
+                        // run task
+                        runAppIntent(gesture)
+                        // reset list
+                        emptyData()
+                    }
+
+                    // run calibration
+                    if (dataIndex >= arraySize && calib.toInt() >= 2) {
+                        val fsrFeatures = preprocessData()
+                        Log.e("MACROSNAP", "Processed features " + fsrFeatures.joinToString())
+                        val label = calib.toInt() - 3
+                        datasetX.add(datasetIndex, fsrFeatures)
+                        datasetY.add(datasetIndex, label)
+                        datasetIndex += 1
+                        if (prevGestureLabel != label) {
+                            // if prev gesture is not the same, set the count to 1
+                            currGestureCount = 1
+                        }
+                        else {
+                            currGestureCount += 1
                         }
                     }
-                     */
+
+                    if (datasetIndex >= datasetSize && calib.toInt() == 9) {
+                        // calibration data collection completed
+                        trainSVM(datasetX.toTypedArray(), datasetY.toIntArray())
+                    }
+
+                    // update UI
+                    updateUI(calib.toInt())
                 }
             }
         }
