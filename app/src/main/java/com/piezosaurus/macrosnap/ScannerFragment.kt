@@ -13,28 +13,19 @@ import android.util.Log
 import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
-import android.widget.AdapterView
+import android.view.inputmethod.InputMethodManager
+import android.widget.*
 import android.widget.AdapterView.OnItemSelectedListener
-import android.widget.ArrayAdapter
-import android.widget.Button
-import android.widget.Spinner
-import android.widget.TextView
-import android.widget.TimePicker
 import androidx.fragment.app.Fragment
-import smile.classification.OneVersusRest
-import smile.classification.ovr
-import smile.classification.svm
-import java.util.*
-
-import java.io.*
 import smile.*
-import smile.data.*
 import smile.classification.*
+import smile.data.*
+import smile.math.MathEx.*
 import smile.math.kernel.*
 import smile.validation.*
-import smile.math.MathEx.*
-import smile.math.kernel.GaussianKernel
 import smile.validation.metric.Accuracy
+import java.io.*
+import java.util.*
 
 
 data class Dataset(val x: Array<DoubleArray>, val y: IntArray)
@@ -60,6 +51,9 @@ class ScannerFragment : Fragment() {
     private lateinit var timerTimePicker: MyTimePicker
     private lateinit var timerButton: Button
     private lateinit var spinner3: Spinner
+    private lateinit var addressText: TextView
+    private lateinit var addressEditText: EditText
+    private lateinit var addressButton: Button
     private lateinit var debugTextView: TextView
 
     private var btManager: BluetoothManager? = null
@@ -76,6 +70,7 @@ class ScannerFragment : Fragment() {
     private var timerMinute: Int = 0
     private var timerSecond: Int = 0
     private var gestureSelection3: Int = 0
+    private var address: String = ""
 
     // Calibration
     private var prevCalib: Int = 0
@@ -186,7 +181,7 @@ class ScannerFragment : Fragment() {
                 Log.e("MACROSNAP","Task 2 gesture $gestureSelection2")
             }
             override fun onNothingSelected(parent: AdapterView<*>?) {
-                gestureSelection1 = 0
+                gestureSelection2 = 0
             }
         })
         activity?.let {
@@ -216,6 +211,32 @@ class ScannerFragment : Fragment() {
         )
         timerButton.setOnClickListener { onTimerButtonClick() }
         // Task 3
+        spinner3 = view.findViewById(R.id.spinner3)
+        spinner3.onItemSelectedListener = (object : OnItemSelectedListener {
+            override fun onItemSelected(parent: AdapterView<*>?, view: View?, position: Int, id: Long) {
+                gestureSelection3 = position
+                Log.e("MACROSNAP","Task 3 gesture $gestureSelection3")
+            }
+            override fun onNothingSelected(parent: AdapterView<*>?) {
+                gestureSelection3 = 0
+            }
+        })
+        activity?.let {
+            ArrayAdapter.createFromResource(
+                it,
+                R.array.gesture_types,
+                android.R.layout.simple_spinner_item
+            ).also { adapter ->
+                // Specify the layout to use when the list of choices appears
+                adapter.setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item)
+                // Apply the adapter to the spinner
+                spinner3.adapter = adapter
+            }
+        }
+        addressText = view.findViewById(R.id.address_text)
+        addressEditText = view.findViewById(R.id.addressEditText)
+        addressButton = view.findViewById(R.id.addressButton)
+        addressButton.setOnClickListener { onAddressButtonClick() }
     }
 
     private fun onStartScannerButtonClick() {
@@ -276,6 +297,26 @@ class ScannerFragment : Fragment() {
             timerText.visibility = View.VISIBLE
             timerTimePicker.visibility = View.GONE
             timerButton.setText("Change time")
+        }
+    }
+
+    private fun onAddressButtonClick() {
+        if (addressEditText.visibility == View.GONE) {
+            addressText.visibility = View.GONE
+            addressEditText.visibility = View.VISIBLE
+            addressButton.setText("Set address")
+        }
+        else {
+            if (addressEditText.text.isNotEmpty()) {
+                addressText.text = addressEditText.text.toString()
+                address = addressEditText.text.toString()
+            }
+            val imm: InputMethodManager =
+                this.context?.getSystemService(Context.INPUT_METHOD_SERVICE) as InputMethodManager
+            imm.hideSoftInputFromWindow(view?.windowToken, 0)
+            addressText.visibility = View.VISIBLE
+            addressEditText.visibility = View.GONE
+            addressButton.setText("Change address")
         }
     }
 
