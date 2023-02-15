@@ -13,8 +13,13 @@ import android.util.Log
 import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
+import android.widget.AdapterView
+import android.widget.AdapterView.OnItemSelectedListener
+import android.widget.ArrayAdapter
 import android.widget.Button
+import android.widget.Spinner
 import android.widget.TextView
+import android.widget.TimePicker
 import androidx.fragment.app.Fragment
 import smile.classification.OneVersusRest
 import smile.classification.ovr
@@ -35,6 +40,7 @@ import smile.validation.metric.Accuracy
 data class Dataset(val x: Array<DoubleArray>, val y: IntArray)
 
 enum class GestureType(val str: String) {
+    NONE("None"),
     FIST("Fist"),
     WRIST_SUPINATE("Wrist Supination"),
     WRIST_PRONATE("Wrist Pronation"),
@@ -45,13 +51,31 @@ enum class GestureType(val str: String) {
 class ScannerFragment : Fragment() {
     private lateinit var startButton: Button
     private lateinit var stopButton: Button
-    private lateinit var svmTextView: TextView
-    private lateinit var fsrTextView: TextView
+    private lateinit var spinner1: Spinner
+    private lateinit var alarmText: TextView
+    private lateinit var alarmTimePicker: TimePicker
+    private lateinit var alarmButton: Button
+    private lateinit var spinner2: Spinner
+    private lateinit var timerText: TextView
+    private lateinit var timerTimePicker: MyTimePicker
+    private lateinit var timerButton: Button
+    private lateinit var spinner3: Spinner
+    private lateinit var debugTextView: TextView
 
     private var btManager: BluetoothManager? = null
     private var btAdapter: BluetoothAdapter? = null
     private var btScanner: BluetoothLeScanner? = null
     private val scanRestartPeriod: Long = 600000  // restart scan every 10 mins (600000 millisec)
+
+    // Gesture tasks
+    private var gestureSelection1: Int = 0
+    private var alarmHour: Int = 9
+    private var alarmMinute: Int = 0
+    private var gestureSelection2: Int = 0
+    private var timerHour: Int = 0
+    private var timerMinute: Int = 0
+    private var timerSecond: Int = 0
+    private var gestureSelection3: Int = 0
 
     // Calibration
     private var prevCalib: Int = 0
@@ -100,12 +124,98 @@ class ScannerFragment : Fragment() {
     }
 
     private fun initViews(view: View) {
-        svmTextView = view.findViewById(R.id.svm_data_status)
-        fsrTextView = view.findViewById(R.id.fsr_values)
+        debugTextView = view.findViewById(R.id.debug_status)
         startButton = view.findViewById(R.id.startButton)
         stopButton = view.findViewById(R.id.stopButton)
         startButton.setOnClickListener { onStartScannerButtonClick() }
         stopButton.setOnClickListener { onStopScannerButtonClick() }
+        // Task 1
+        spinner1 = view.findViewById(R.id.spinner1)
+        spinner1.onItemSelectedListener = (object : OnItemSelectedListener {
+            override fun onItemSelected(parent: AdapterView<*>?, view: View?, position: Int, id: Long) {
+                gestureSelection1 = position
+                Log.e("MACROSNAP","Task 1 gesture $gestureSelection1")
+            }
+            override fun onNothingSelected(parent: AdapterView<*>?) {
+                gestureSelection1 = 0
+            }
+        })
+        activity?.let {
+            ArrayAdapter.createFromResource(
+                it,
+                R.array.gesture_types,
+                android.R.layout.simple_spinner_item
+            ).also { adapter ->
+                // Specify the layout to use when the list of choices appears
+                adapter.setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item)
+                // Apply the adapter to the spinner
+                spinner1.adapter = adapter
+            }
+        }
+        alarmText = view.findViewById(R.id.alarm_time)
+        alarmButton = view.findViewById(R.id.alarmButton)
+        alarmTimePicker = view.findViewById(R.id.alarmTimePicker)
+        alarmTimePicker.setOnTimeChangedListener { _, hour, minute -> var hour = hour
+            alarmHour = hour
+            alarmMinute = minute
+            var am_pm = ""
+            // AM_PM decider logic
+            when {hour == 0 -> { hour += 12
+                am_pm = "AM"
+            }
+                hour == 12 -> am_pm = "PM"
+                hour > 12 -> { hour -= 12
+                    am_pm = "PM"
+                }
+                else -> am_pm = "AM"
+            }
+            if (alarmText != null) {
+                val hour = if (hour < 10) "0" + hour else hour
+                val min = if (minute < 10) "0" + minute else minute
+                // display format of time
+                val msg = "$hour:$min $am_pm"
+                alarmText.text = msg
+            }
+        }
+        alarmButton.setOnClickListener { onAlarmButtonClick() }
+        // Task 2
+        spinner2 = view.findViewById(R.id.spinner2)
+        spinner2.onItemSelectedListener = (object : OnItemSelectedListener {
+            override fun onItemSelected(parent: AdapterView<*>?, view: View?, position: Int, id: Long) {
+                gestureSelection2 = position
+                Log.e("MACROSNAP","Task 2 gesture $gestureSelection2")
+            }
+            override fun onNothingSelected(parent: AdapterView<*>?) {
+                gestureSelection1 = 0
+            }
+        })
+        activity?.let {
+            ArrayAdapter.createFromResource(
+                it,
+                R.array.gesture_types,
+                android.R.layout.simple_spinner_item
+            ).also { adapter ->
+                // Specify the layout to use when the list of choices appears
+                adapter.setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item)
+                // Apply the adapter to the spinner
+                spinner2.adapter = adapter
+            }
+        }
+        timerText = view.findViewById(R.id.timer_time)
+        timerButton = view.findViewById(R.id.timerButton)
+        timerTimePicker = view.findViewById(R.id.timerTimePicker)
+        timerTimePicker.setOnTimeChangedListener(
+            object: MyTimePicker.OnTimeChangedListener {
+                override fun onTimeChanged(var1: MyTimePicker?, var2: Int, var3: Int, var4: Int) {
+                    timerHour = var2
+                    timerMinute = var3
+                    timerSecond = var4
+                    timerText.text = "%02d:%02d:%02d".format(timerHour, timerMinute, timerSecond)
+                }
+            }
+        )
+        timerButton.setOnClickListener { onTimerButtonClick() }
+        // Task 3
     }
 
     private fun onStartScannerButtonClick() {
@@ -140,6 +250,32 @@ class ScannerFragment : Fragment() {
             btScanner!!.stopScan(leScanCallback)
             onStartScannerButtonClick()
             Log.e("MACROSNAP","Restarted scan")
+        }
+    }
+
+    private fun onAlarmButtonClick() {
+        if (alarmTimePicker.visibility == View.GONE) {
+            alarmText.visibility = View.GONE
+            alarmTimePicker.visibility = View.VISIBLE
+            alarmButton.setText("Set time")
+        }
+        else {
+            alarmText.visibility = View.VISIBLE
+            alarmTimePicker.visibility = View.GONE
+            alarmButton.setText("Change time")
+        }
+    }
+
+    private fun onTimerButtonClick() {
+        if (timerTimePicker.visibility == View.GONE) {
+            timerText.visibility = View.GONE
+            timerTimePicker.visibility = View.VISIBLE
+            timerButton.setText("Set time")
+        }
+        else {
+            timerText.visibility = View.VISIBLE
+            timerTimePicker.visibility = View.GONE
+            timerButton.setText("Change time")
         }
     }
 
@@ -235,13 +371,13 @@ class ScannerFragment : Fragment() {
         val yFile = File(this.context?.filesDir,"y.txt")
         if(xFile.exists() && yFile.exists()){
             Log.e("MACROSNAP","Dataset files found.")
-            svmTextView.text = "Found saved calibration"
+            debugTextView.text = "Found saved calibration"
             val (x, y) = readData()
             trainSVM(x, y)
             showNormalUI()
         } else {
             Log.e("MACROSNAP","Dataset files not found.")
-            svmTextView.text = "Calibration required"
+            debugTextView.text = "Calibration required"
             // request calibration UI
             requestCalibrationUI()
         }
@@ -299,7 +435,7 @@ class ScannerFragment : Fragment() {
         // save dataset
         val xFile = File(this.context?.filesDir,"x.txt")
         val yFile = File(this.context?.filesDir,"y.txt")
-        if(!xFile.exists() && !yFile.exists()){
+        if(!xFile.exists() || !yFile.exists()){
             writeData(x, y)
         }
     }
@@ -378,7 +514,7 @@ class ScannerFragment : Fragment() {
                         fsr1Data[dataIndex] = fsr1.toDouble() / 255.0 - fsrRestValue[0]
                         fsr2Data[dataIndex] = fsr2.toDouble() / 255.0 - fsrRestValue[1]
                         fsr3Data[dataIndex] = fsr3.toDouble() / 255.0 - fsrRestValue[2]
-                        fsrTextView.text = "FSR1 %.4f FSR2 %.4f FSR3 %.4f".format(fsr1Data[dataIndex], fsr2Data[dataIndex], fsr3Data[dataIndex])
+                        debugTextView.text = "FSR1 %.4f FSR2 %.4f FSR3 %.4f".format(fsr1Data[dataIndex], fsr2Data[dataIndex], fsr3Data[dataIndex])
                         dataIndex += 1
                     }
 
@@ -411,7 +547,7 @@ class ScannerFragment : Fragment() {
                     if (dataIndex >= arraySize && calib.toInt() >= 2) {
                         val fsrFeatures = preprocessData()
                         Log.e("MACROSNAP", "Processed features " + fsrFeatures.joinToString())
-                        val label = calib.toInt() - 3
+                        val label = calib.toInt() - 2
                         datasetX.add(datasetIndex, fsrFeatures)
                         datasetY.add(datasetIndex, label)
                         datasetIndex += 1

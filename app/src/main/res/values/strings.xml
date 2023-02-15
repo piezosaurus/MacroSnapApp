@@ -1,3 +1,11 @@
 <resources>
     <string name="app_name">Macro Snap</string>
+    <string-array name="gesture_types">
+        <item>None</item>
+        <item>Fist</item>
+        <item>Wrist Supination</item>
+        <item>Wrist Pronation</item>
+        <item>Wrist Up (Extension)</item>
+        <item>Wrist Down (Flexion)</item>
+    </string-array>
 </resources>
