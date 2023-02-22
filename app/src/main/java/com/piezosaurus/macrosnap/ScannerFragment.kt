@@ -17,6 +17,7 @@ import android.view.inputmethod.InputMethodManager
 import android.widget.*
 import android.widget.AdapterView.OnItemSelectedListener
 import androidx.fragment.app.Fragment
+import kotlin.random.Random
 import smile.*
 import smile.classification.*
 import smile.data.*
@@ -24,6 +25,7 @@ import smile.math.MathEx.*
 import smile.math.kernel.*
 import smile.validation.*
 import smile.validation.metric.Accuracy
+import smile.validation.metric.ConfusionMatrix
 import java.io.*
 import java.util.*
 
@@ -106,6 +108,9 @@ class ScannerFragment : Fragment() {
 
     // SVM model
     private var model: OneVersusRest<DoubleArray>? = null
+    private var gesture1Accuracy = 0.0
+    private var gesture2Accuracy = 0.0
+    private var gesture3Accuracy = 0.0
 
     override fun onCreateView(
         inflater: LayoutInflater, container: ViewGroup?,
@@ -436,7 +441,6 @@ class ScannerFragment : Fragment() {
         prevCalib = 0.5
 
 
-
         val xFile = File(this.context?.filesDir,"x.txt")
         val yFile = File(this.context?.filesDir,"y.txt")
         if(xFile.exists() && yFile.exists()){
@@ -494,13 +498,65 @@ class ScannerFragment : Fragment() {
         )
     }
 
+    private fun crossValidation(X: Array<DoubleArray>, Y: IntArray): DoubleArray {
+        // shuffle dataset
+        val shuffleIndex = List(X.size) { Random.nextInt(0, X.size-1) }
+        val shuffledX = X.slice(shuffleIndex)
+        val shuffledY = Y.slice(shuffleIndex)
+        // split dataset into 5 chunks
+        val splitX = shuffledX.toList().chunked(5)
+        val splitY = shuffledY.toList().chunked(5)
+        // 5-fold cross validation
+        val nClasses = 9  // change to 6 later
+        val numCorrect = MutableList(nClasses) { 0 }
+        val numTotal = MutableList(nClasses) { 0 }
+        for (i in splitX.indices) {
+            val testX = splitX[i]
+            val testY = splitY[i]
+            val trainX: MutableList<DoubleArray> = ArrayList()
+            val trainY: MutableList<Int> = ArrayList()
+            for (j in splitX.indices) {
+                if (i != j) {
+                    trainX += splitX[j]
+                    trainY += splitY[j]
+                }
+            }
+            val kernel = GaussianKernel(1/6.0)  // gamma = 1/num_features
+            val model = ovr(trainX.toTypedArray(), trainY.toIntArray(), { x, y -> svm(x, y, kernel, 1.0, 1E-3) })
+            val confMatrix = ConfusionMatrix.of(testY.toIntArray(), model.predict(testX.toTypedArray())).matrix
+            for (k in confMatrix.indices) {
+                numCorrect[k] += confMatrix[k][k]
+                numTotal[k] += sum(confMatrix[k]).toInt()
+            }
+        }
+        val accuracy = MutableList(nClasses) { 0.0 }
+        for (i in numCorrect.indices) {
+            if (numTotal[i] > 0) {
+                accuracy[i] = numCorrect[i].toDouble() / numTotal[i]
+            }
+        }
+        return accuracy.toDoubleArray()
+    }
+
     private fun trainSVM(x: Array<DoubleArray>, y: IntArray) {
+        // determine top 3 gestures based on cross validation accuracy
+        val classAccuracies = crossValidation(x, y)
+        val meanAcc = mean(classAccuracies)
+        Log.e("MACROSNAP", "SVM acc: $meanAcc")
+        val indices = arrayOf(1, 2, 3, 4, 5)
+        val sortedIndices = indices.sortedByDescending { classAccuracies[it] }
+        gestureSelection1 = sortedIndices[0]
+        gestureSelection2 = sortedIndices[1]
+        gestureSelection3 = sortedIndices[2]
+        gesture1Accuracy = classAccuracies[gestureSelection1]
+        gesture2Accuracy = classAccuracies[gestureSelection2]
+        gesture3Accuracy = classAccuracies[gestureSelection3]
+        Log.e("MACROSNAP", "Task 1 gesture $gestureSelection1 acc: %.4f".format(gesture1Accuracy))
+        Log.e("MACROSNAP", "Task 2 gesture $gestureSelection2 acc: %.4f".format(gesture2Accuracy))
+        Log.e("MACROSNAP", "Task 3 gesture $gestureSelection3 acc: %.4f".format(gesture3Accuracy))
+        // train on full dataset
         val kernel = GaussianKernel(1/6.0)  // gamma = 1/num_features
         model = ovr(x, y, { x, y -> svm(x, y, kernel, 1.0, 1E-3) })
-        val acc = Accuracy.of(y, model!!.predict(x))
-        Log.e("MACROSNAP", "SVM acc: $acc")
-//        println(Accuracy.of(y, model.predict(x)))
-//        println(ConfusionMatrix.of(y, model.predict(x)))
         // save dataset
         val xFile = File(this.context?.filesDir,"x.txt")
         val yFile = File(this.context?.filesDir,"y.txt")
@@ -560,7 +616,10 @@ class ScannerFragment : Fragment() {
 
         if (status == 7) {
             calibTitle.text = "Calibration Complete!"
-            calibDescription.text = "Some text about accuracy and stuff, click 'START SCANNING' to start using Macro Snap!"
+            val gesture1Text = GestureType.values()[gestureSelection1].str
+            val gesture2Text = GestureType.values()[gestureSelection2].str
+            val gesture3Text = GestureType.values()[gestureSelection3].str
+            calibDescription.text = "Recommended gestures and accuracy: \n  " + gesture1Text + " (set to Task 1) %.2f \n  ".format(gesture1Accuracy*100) + gesture2Text + " (set to Task 2) %.2f \n  ".format(gesture1Accuracy*100) + gesture3Text + " (set to Task 3) %.2f ".format(gesture3Accuracy) + "\nClick 'START SCANNING' to start using Macro Snap!"
             calibImage.setImageResource(android.R.color.transparent)
             onStopScannerButtonClick()
         }
@@ -587,8 +646,22 @@ class ScannerFragment : Fragment() {
         }
     }
 
-    private fun runAppIntent(gesture: GestureType) {
+    private fun runAppIntent(gestureIndex: Int) {
         // run task based on given gesture
+        when (gestureIndex) {
+            gestureSelection1 -> {
+                // run task 1
+                return
+            }
+            gestureSelection2 -> {
+                // run task 2
+                return
+            }
+            gestureSelection3 -> {
+                // run task 3
+                return
+            }
+        }
     }
 
     @OptIn(ExperimentalUnsignedTypes::class)
@@ -646,7 +719,7 @@ class ScannerFragment : Fragment() {
                         val gesture = GestureType.values()[pred]
                         Log.e("MACROSNAP", "Predicted gesture " + gesture.str)
                         // run task
-                        runAppIntent(gesture)
+                        runAppIntent(pred)
                         // reset list
                         emptyData()
                     }
@@ -668,7 +741,7 @@ class ScannerFragment : Fragment() {
                         }
                     }
 
-                    if (datasetIndex >= datasetSize && calib.toInt() == 9) {
+                    if (datasetIndex >= datasetSize && calib.toInt() == 7) {
                         // calibration data collection completed
                         trainSVM(datasetX.toTypedArray(), datasetY.toIntArray())
                     }
