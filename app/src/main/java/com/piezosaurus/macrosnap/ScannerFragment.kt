@@ -42,6 +42,7 @@ enum class GestureType(val str: String) {
 class ScannerFragment : Fragment() {
     private lateinit var startButton: Button
     private lateinit var stopButton: Button
+    private lateinit var viewSwitcher: ViewSwitcher
     private lateinit var spinner1: Spinner
     private lateinit var alarmText: TextView
     private lateinit var alarmTimePicker: TimePicker
@@ -55,6 +56,14 @@ class ScannerFragment : Fragment() {
     private lateinit var addressEditText: EditText
     private lateinit var addressButton: Button
     private lateinit var debugTextView: TextView
+
+    // Calibration
+    private lateinit var calibTitle: TextView
+    private lateinit var progressText: TextView
+    private lateinit var progressBar: ProgressBar
+    private lateinit var calibDescription: TextView
+    private lateinit var calibImage: ImageView
+    private lateinit var nextButton: Button  // delete later
 
     private var btManager: BluetoothManager? = null
     private var btAdapter: BluetoothAdapter? = null
@@ -73,7 +82,9 @@ class ScannerFragment : Fragment() {
     private var address: String = ""
 
     // Calibration
-    private var prevCalib: Int = 0
+    private var prevCalib: Double = 0.0
+    private var calibImageDrawables = arrayOf<String>()
+    private var calibDescriptionText = arrayOf<String>()
 
     // FSR raw values (range 0 to 255)
     // 0 is no force, 255 is high force
@@ -120,6 +131,7 @@ class ScannerFragment : Fragment() {
 
     private fun initViews(view: View) {
         debugTextView = view.findViewById(R.id.debug_status)
+        viewSwitcher = view.findViewById(R.id.viewSwitcher)
         startButton = view.findViewById(R.id.startButton)
         stopButton = view.findViewById(R.id.stopButton)
         startButton.setOnClickListener { onStartScannerButtonClick() }
@@ -237,6 +249,17 @@ class ScannerFragment : Fragment() {
         addressEditText = view.findViewById(R.id.addressEditText)
         addressButton = view.findViewById(R.id.addressButton)
         addressButton.setOnClickListener { onAddressButtonClick() }
+        // Calibration
+        calibTitle = view.findViewById(R.id.calib_title)
+        progressText = view.findViewById(R.id.gesture_progress)
+        progressBar = view.findViewById(R.id.progressBar)
+        calibDescription = view.findViewById(R.id.calib_description)
+        calibImage = view.findViewById(R.id.calib_image)
+        calibImageDrawables = resources.getStringArray(R.array.calib_images)
+        calibDescriptionText = resources.getStringArray(R.array.calib_descriptions)
+        // delete later
+        nextButton = view.findViewById(R.id.nextUI)
+        nextButton.setOnClickListener { onNextUIButtonClick() }
     }
 
     private fun onStartScannerButtonClick() {
@@ -408,6 +431,12 @@ class ScannerFragment : Fragment() {
     }
 
     private fun loadSVM() {
+        // delete later
+        viewSwitcher.showNext()
+        prevCalib = 0.5
+
+
+
         val xFile = File(this.context?.filesDir,"x.txt")
         val yFile = File(this.context?.filesDir,"y.txt")
         if(xFile.exists() && yFile.exists()){
@@ -415,12 +444,12 @@ class ScannerFragment : Fragment() {
             debugTextView.text = "Found saved calibration"
             val (x, y) = readData()
             trainSVM(x, y)
-            showNormalUI()
         } else {
             Log.e("MACROSNAP","Dataset files not found.")
             debugTextView.text = "Calibration required"
             // request calibration UI
-            requestCalibrationUI()
+            viewSwitcher.showNext()
+            prevCalib = 0.5
         }
     }
 
@@ -468,7 +497,6 @@ class ScannerFragment : Fragment() {
     private fun trainSVM(x: Array<DoubleArray>, y: IntArray) {
         val kernel = GaussianKernel(1/6.0)  // gamma = 1/num_features
         model = ovr(x, y, { x, y -> svm(x, y, kernel, 1.0, 1E-3) })
-//        var pred = CrossValidation.classification(10, x, y, {a, b -> ovr(a, b, { c, d -> svm(c, d, kernel, 5.0, 1E-3) })})
         val acc = Accuracy.of(y, model!!.predict(x))
         Log.e("MACROSNAP", "SVM acc: $acc")
 //        println(Accuracy.of(y, model.predict(x)))
@@ -489,36 +517,74 @@ class ScannerFragment : Fragment() {
     }
 
     private fun updateUI(status: Int) {
-        if (status == prevCalib) {
-            // no need to change UI
-            return
+        Log.e("MACROSNAP", "Updating UI status: $status")
+        if (status == 1 && prevCalib == 0.0) {
+            viewSwitcher.showNext()  // switch from normal to calibration UI
+        } else if (status == 0 && prevCalib >= 7.0) {
+            viewSwitcher.showPrevious()  // switch from calibration to normal UI
         }
-        if (status == 0) {
-            showNormalUI()
+        if (status > 0) {
+            setCalibrationUI(status)
         }
-        else if (status > 0) {
-            showCalibrationUI(status)
-        }
-        prevCalib = status
+        prevCalib = status.toDouble()
     }
 
-    private fun showNormalUI() {
-        // hide calibration UI
-        // show normal UI elements
+    private fun onNextUIButtonClick() { // delete later
+        Log.e("MACROSNAP", "$prevCalib $currGestureCount")
+        var status = prevCalib.toInt()
+        if (prevCalib == 0.5) {
+            status = 1
+        }
+        else if (prevCalib <= 1.0 || (prevCalib >= 1.0 && currGestureCount >= 5)) {
+            status = (prevCalib + 1).toInt()
+            currGestureCount = 0
+        }
+        else if (prevCalib >= 1.0 && prevCalib < 7.0) {
+            currGestureCount += 1
+        }
+        else if (prevCalib == 7.0) {
+            status = 0
+        }
+        updateUI(status)
     }
 
-    private fun requestCalibrationUI() {
-        // function called when user does not have saved calibration data
-        // display UI to ask user
-    }
+    private fun setCalibrationUI(status: Int) {
+        Log.e("MACROSNAP", "Set Calibration UI $status")
+        if (status == 1) {
+            calibTitle.text = "Snap Calibration"
+        }
+        else if (status < 7) {
+            val gestureText = GestureType.values()[status-1].str
+            calibTitle.text = "Gesture Calibration: $gestureText"
+        }
 
-    private fun showCalibrationUI(status: Int) {
-        // hide request calibration UI elements
-        // hide normal UI elements
-        // show calibration UI
+        if (status == 7) {
+            calibTitle.text = "Calibration Complete!"
+            calibDescription.text = "Some text about accuracy and stuff, click 'START SCANNING' to start using Macro Snap!"
+            calibImage.setImageResource(android.R.color.transparent)
+            onStopScannerButtonClick()
+        }
+        else {
+            val imageId = resources.getIdentifier(calibImageDrawables[status-1], "drawable", activity?.packageName)
+            calibImage.setImageResource(imageId)
+            calibDescription.text = calibDescriptionText[status-1]
+        }
 
-        // determine what UI to show based on status which is the calib value
-        // find the progress of each gesture based on currGestureCount
+        if (status in 2..6) {
+            progressBar.visibility = View.VISIBLE
+            progressText.visibility = View.VISIBLE
+            progressText.text = "$currGestureCount/5"
+            if (currGestureCount >= 1) {
+                progressBar.incrementProgressBy(20)
+            }
+            else {
+                progressBar.progress = 0
+            }
+        }
+        else {
+            progressBar.visibility = View.GONE
+            progressText.visibility = View.GONE
+        }
     }
 
     private fun runAppIntent(gesture: GestureType) {
@@ -546,6 +612,7 @@ class ScannerFragment : Fragment() {
                         "MACROSNAP",
                         "vbat $battery, fsrs [$fsr1, $fsr2, $fsr3], calib $calib, status $status, connected $connected"
                     )
+                    debugTextView.text = "vbat $battery, fsrs [$fsr1, $fsr2, $fsr3], calib $calib, status $status, connected $connected"
 
                     // only store raw FSR values if
                     // connected is 1 -> all modules of armband is wired
