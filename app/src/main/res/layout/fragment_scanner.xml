@@ -212,30 +212,29 @@
                         android:layout_width="wrap_content"
                         android:layout_height="wrap_content"
                         android:layout_gravity="center"
-                        android:text="Show location on map: " />
+                        android:text="Play Spotify playlist: " />
 
                     <TextView
-                        android:id="@+id/address_text"
+                        android:id="@+id/link_text"
                         android:layout_width="wrap_content"
                         android:layout_height="wrap_content"
                         android:layout_gravity="center"
                         android:layout_margin="10dp"
-                        android:textSize="20sp"
-                        android:text="University of Waterloo"
+                        android:text="https://open.spotify.com/playlist/37i9dQZF1DXaTIN6XNquoW?si=b749d116f9fc471c"
                          />
 
                     <EditText
-                        android:id="@+id/addressEditText"
+                        android:id="@+id/linkEditText"
                         android:layout_width="match_parent"
                         android:layout_height="wrap_content"
                         android:layout_centerInParent="true"
                         android:layout_margin="10dp"
                         android:textSize="20sp"
-                        android:hint="Enter address or location query"
+                        android:hint="Enter playlist link"
                         android:visibility="gone" />
 
                     <Button
-                        android:id="@+id/addressButton"
+                        android:id="@+id/linkButton"
                         android:layout_width="match_parent"
                         android:layout_height="wrap_content"
                         android:layout_margin="10dp"
@@ -244,7 +243,7 @@
                         android:clickable="true"
                         android:focusable="true"
                         android:textColor="@color/white"
-                        android:text="Change address" />
+                        android:text="Change playlist" />
 
                 </LinearLayout>
 

@@ -8,6 +8,7 @@ import android.bluetooth.le.*
 import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
+import android.net.Uri
 import android.os.Bundle
 import android.util.Log
 import android.view.LayoutInflater
@@ -54,9 +55,9 @@ class ScannerFragment : Fragment() {
     private lateinit var timerTimePicker: MyTimePicker
     private lateinit var timerButton: Button
     private lateinit var spinner3: Spinner
-    private lateinit var addressText: TextView
-    private lateinit var addressEditText: EditText
-    private lateinit var addressButton: Button
+    private lateinit var playlistLinkText: TextView
+    private lateinit var playlistLinkEditText: EditText
+    private lateinit var playlistLinkButton: Button
     private lateinit var debugTextView: TextView
 
     // Calibration
@@ -81,7 +82,7 @@ class ScannerFragment : Fragment() {
     private var timerMinute: Int = 0
     private var timerSecond: Int = 0
     private var gestureSelection3: Int = 0
-    private var address: String = ""
+    private var playlistLink: String = ""
 
     // Calibration
     private var prevCalib: Double = 0.0
@@ -112,12 +113,16 @@ class ScannerFragment : Fragment() {
     private var gesture2Accuracy = 0.0
     private var gesture3Accuracy = 0.0
 
+    // Tasks
+    private var tasks: Tasks? = null
+
     override fun onCreateView(
         inflater: LayoutInflater, container: ViewGroup?,
         savedInstanceState: Bundle?
     ): View? {
         val view = inflater.inflate(R.layout.fragment_scanner, container, false)
         initViews(view)
+        tasks = Tasks(context!!)
         setUpBluetoothManager()
         loadSVM()
         // max continuous scan time is 30 min
@@ -250,10 +255,10 @@ class ScannerFragment : Fragment() {
                 spinner3.adapter = adapter
             }
         }
-        addressText = view.findViewById(R.id.address_text)
-        addressEditText = view.findViewById(R.id.addressEditText)
-        addressButton = view.findViewById(R.id.addressButton)
-        addressButton.setOnClickListener { onAddressButtonClick() }
+        playlistLinkText = view.findViewById(R.id.link_text)
+        playlistLinkEditText = view.findViewById(R.id.linkEditText)
+        playlistLinkButton = view.findViewById(R.id.linkButton)
+        playlistLinkButton.setOnClickListener { onplaylistLinkButtonClick() }
         // Calibration
         calibTitle = view.findViewById(R.id.calib_title)
         progressText = view.findViewById(R.id.gesture_progress)
@@ -312,6 +317,8 @@ class ScannerFragment : Fragment() {
             alarmText.visibility = View.VISIBLE
             alarmTimePicker.visibility = View.GONE
             alarmButton.setText("Change time")
+
+            runAppIntent(1) //delete
         }
     }
 
@@ -325,26 +332,34 @@ class ScannerFragment : Fragment() {
             timerText.visibility = View.VISIBLE
             timerTimePicker.visibility = View.GONE
             timerButton.setText("Change time")
+
+            runAppIntent(2) //delete
         }
     }
 
-    private fun onAddressButtonClick() {
-        if (addressEditText.visibility == View.GONE) {
-            addressText.visibility = View.GONE
-            addressEditText.visibility = View.VISIBLE
-            addressButton.setText("Set address")
+    private fun onplaylistLinkButtonClick() {
+        if (playlistLinkEditText.visibility == View.GONE) {
+            playlistLinkText.visibility = View.GONE
+            playlistLinkEditText.visibility = View.VISIBLE
+            playlistLinkButton.setText("Save playlist")
         }
         else {
-            if (addressEditText.text.isNotEmpty()) {
-                addressText.text = addressEditText.text.toString()
-                address = addressEditText.text.toString()
+            if (playlistLinkEditText.text.isNotEmpty()) {
+                playlistLinkText.text = playlistLinkEditText.text.toString()
+                playlistLink = playlistLinkEditText.text.toString()
             }
+            else {
+                playlistLink = playlistLinkText.text.toString()
+            }
+
+            runAppIntent(3) //delete
+
             val imm: InputMethodManager =
                 this.context?.getSystemService(Context.INPUT_METHOD_SERVICE) as InputMethodManager
             imm.hideSoftInputFromWindow(view?.windowToken, 0)
-            addressText.visibility = View.VISIBLE
-            addressEditText.visibility = View.GONE
-            addressButton.setText("Change address")
+            playlistLinkText.visibility = View.VISIBLE
+            playlistLinkEditText.visibility = View.GONE
+            playlistLinkButton.setText("Change playlist")
         }
     }
 
@@ -437,8 +452,8 @@ class ScannerFragment : Fragment() {
 
     private fun loadSVM() {
         // delete later
-        viewSwitcher.showNext()
-        prevCalib = 0.5
+//        viewSwitcher.showNext()
+//        prevCalib = 0.5
 
 
         val xFile = File(this.context?.filesDir,"x.txt")
@@ -649,16 +664,28 @@ class ScannerFragment : Fragment() {
     private fun runAppIntent(gestureIndex: Int) {
         // run task based on given gesture
         when (gestureIndex) {
+            0 -> {
+                return
+            }
             gestureSelection1 -> {
                 // run task 1
+                tasks?.alarm("Macro Snap Alarm", alarmHour, alarmMinute)
                 return
             }
             gestureSelection2 -> {
                 // run task 2
+                val secs = timerHour * 3600 + timerMinute * 60 + timerSecond
+                tasks?.timer("Macro Snap Timer", secs)
                 return
             }
             gestureSelection3 -> {
                 // run task 3
+                Log.e("MACROSNAP", "spotify link $playlistLink")
+                val playlistId = playlistLink.substringAfter("playlist/").substringBefore('?')
+                Log.e("MACROSNAP", "spotify $playlistId")
+                tasks?.spotify(playlistId)
+//                val geoloc = Uri.parse("geo:0,0?q=" + address)
+//                tasks?.maps(geoloc)
                 return
             }
         }
