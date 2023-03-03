@@ -5,10 +5,10 @@ import android.app.AlertDialog
 import android.bluetooth.BluetoothAdapter
 import android.bluetooth.BluetoothManager
 import android.bluetooth.le.*
+import android.content.ComponentName
 import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
-import android.net.Uri
 import android.os.Bundle
 import android.util.Log
 import android.view.LayoutInflater
@@ -18,17 +18,16 @@ import android.view.inputmethod.InputMethodManager
 import android.widget.*
 import android.widget.AdapterView.OnItemSelectedListener
 import androidx.fragment.app.Fragment
-import kotlin.random.Random
 import smile.*
 import smile.classification.*
 import smile.data.*
 import smile.math.MathEx.*
 import smile.math.kernel.*
 import smile.validation.*
-import smile.validation.metric.Accuracy
 import smile.validation.metric.ConfusionMatrix
 import java.io.*
 import java.util.*
+import kotlin.random.Random
 
 
 data class Dataset(val x: Array<DoubleArray>, val y: IntArray)
@@ -47,9 +46,9 @@ class ScannerFragment : Fragment() {
     private lateinit var stopButton: Button
     private lateinit var viewSwitcher: ViewSwitcher
     private lateinit var spinner1: Spinner
-    private lateinit var alarmText: TextView
-    private lateinit var alarmTimePicker: TimePicker
-    private lateinit var alarmButton: Button
+    private lateinit var addressText: TextView
+    private lateinit var addressEditText: EditText
+    private lateinit var addressButton: Button
     private lateinit var spinner2: Spinner
     private lateinit var timerText: TextView
     private lateinit var timerTimePicker: MyTimePicker
@@ -58,7 +57,12 @@ class ScannerFragment : Fragment() {
     private lateinit var playlistLinkText: TextView
     private lateinit var playlistLinkEditText: EditText
     private lateinit var playlistLinkButton: Button
+    private lateinit var spinner4: Spinner
+    private lateinit var spotifyButton: Button
     private lateinit var debugTextView: TextView
+    private lateinit var graph1: GraphView
+    private lateinit var graph2: GraphView
+    private lateinit var graph3: GraphView
 
     // Calibration
     private lateinit var calibTitle: TextView
@@ -75,14 +79,14 @@ class ScannerFragment : Fragment() {
 
     // Gesture tasks
     private var gestureSelection1: Int = 0
-    private var alarmHour: Int = 9
-    private var alarmMinute: Int = 0
+    private var address: String = ""
     private var gestureSelection2: Int = 0
     private var timerHour: Int = 0
     private var timerMinute: Int = 0
     private var timerSecond: Int = 0
     private var gestureSelection3: Int = 0
     private var playlistLink: String = ""
+    private var gestureSelection4: Int = 0
 
     // Calibration
     private var prevCalib: Double = 0.0
@@ -92,19 +96,20 @@ class ScannerFragment : Fragment() {
     // FSR raw values (range 0 to 255)
     // 0 is no force, 255 is high force
     private var needRestValue: Boolean = true
-    private val arraySize: Int = 10
+    private val arraySize: Int = 25
     private var dataIndex: Int = 0
     private val fsrRestValue = doubleArrayOf(0.0, 0.0, 0.0)
     private val fsr1Data = mutableListOf<Double>()
     private val fsr2Data = mutableListOf<Double>()
     private val fsr3Data = mutableListOf<Double>()
+    private var prevGestureStatus: Int = 0
 
     // Store training data (min 10 samples per gesture)
     private val datasetSize: Int = 50
     private var datasetIndex: Int = 0
     private val datasetX = mutableListOf<DoubleArray>()
     private val datasetY = mutableListOf<Int>()
-    private var prevGestureLabel: Int = 0
+    private var prevCalibStatus: Int = 0
     private var currGestureCount: Int = 0
 
     // SVM model
@@ -140,6 +145,9 @@ class ScannerFragment : Fragment() {
     }
 
     private fun initViews(view: View) {
+        graph1 = view.findViewById(R.id.graph1)
+        graph2 = view.findViewById(R.id.graph2)
+        graph3 = view.findViewById(R.id.graph3)
         debugTextView = view.findViewById(R.id.debug_status)
         viewSwitcher = view.findViewById(R.id.viewSwitcher)
         startButton = view.findViewById(R.id.startButton)
@@ -169,32 +177,10 @@ class ScannerFragment : Fragment() {
                 spinner1.adapter = adapter
             }
         }
-        alarmText = view.findViewById(R.id.alarm_time)
-        alarmButton = view.findViewById(R.id.alarmButton)
-        alarmTimePicker = view.findViewById(R.id.alarmTimePicker)
-        alarmTimePicker.setOnTimeChangedListener { _, hour, minute -> var hour = hour
-            alarmHour = hour
-            alarmMinute = minute
-            var am_pm = ""
-            // AM_PM decider logic
-            when {hour == 0 -> { hour += 12
-                am_pm = "AM"
-            }
-                hour == 12 -> am_pm = "PM"
-                hour > 12 -> { hour -= 12
-                    am_pm = "PM"
-                }
-                else -> am_pm = "AM"
-            }
-            if (alarmText != null) {
-                val hour = if (hour < 10) "0" + hour else hour
-                val min = if (minute < 10) "0" + minute else minute
-                // display format of time
-                val msg = "$hour:$min $am_pm"
-                alarmText.text = msg
-            }
-        }
-        alarmButton.setOnClickListener { onAlarmButtonClick() }
+        addressText = view.findViewById(R.id.address_text)
+        addressEditText = view.findViewById(R.id.addressEditText)
+        addressButton = view.findViewById(R.id.addressButton)
+        addressButton.setOnClickListener { onAddressButtonClick() }
         // Task 2
         spinner2 = view.findViewById(R.id.spinner2)
         spinner2.onItemSelectedListener = (object : OnItemSelectedListener {
@@ -259,6 +245,31 @@ class ScannerFragment : Fragment() {
         playlistLinkEditText = view.findViewById(R.id.linkEditText)
         playlistLinkButton = view.findViewById(R.id.linkButton)
         playlistLinkButton.setOnClickListener { onplaylistLinkButtonClick() }
+        // Task 4
+        spinner4 = view.findViewById(R.id.spinner4)
+        spinner4.onItemSelectedListener = (object : OnItemSelectedListener {
+            override fun onItemSelected(parent: AdapterView<*>?, view: View?, position: Int, id: Long) {
+                gestureSelection4 = position
+                Log.e("MACROSNAP","Task 4 gesture $gestureSelection4")
+            }
+            override fun onNothingSelected(parent: AdapterView<*>?) {
+                gestureSelection4 = 0
+            }
+        })
+        activity?.let {
+            ArrayAdapter.createFromResource(
+                it,
+                R.array.gesture_types,
+                android.R.layout.simple_spinner_item
+            ).also { adapter ->
+                // Specify the layout to use when the list of choices appears
+                adapter.setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item)
+                // Apply the adapter to the spinner
+                spinner4.adapter = adapter
+            }
+        }
+        spotifyButton = view.findViewById(R.id.spotifyButton)
+        spotifyButton.setOnClickListener { onSpotifyButtonClick() }
         // Calibration
         calibTitle = view.findViewById(R.id.calib_title)
         progressText = view.findViewById(R.id.gesture_progress)
@@ -307,19 +318,33 @@ class ScannerFragment : Fragment() {
         }
     }
 
-    private fun onAlarmButtonClick() {
-        if (alarmTimePicker.visibility == View.GONE) {
-            alarmText.visibility = View.GONE
-            alarmTimePicker.visibility = View.VISIBLE
-            alarmButton.setText("Set time")
+    private fun onAddressButtonClick() {
+        if (addressEditText.visibility == View.GONE) {
+            addressText.visibility = View.GONE
+            addressEditText.visibility = View.VISIBLE
+            addressButton.setText("Set location")
         }
         else {
-            alarmText.visibility = View.VISIBLE
-            alarmTimePicker.visibility = View.GONE
-            alarmButton.setText("Change time")
-
-            runAppIntent(1) //delete
+            if (addressEditText.text.isNotEmpty()) {
+                addressText.text = addressEditText.text.toString()
+                address = addressEditText.text.toString()
+            }
+            else {
+                address = addressText.text.toString()
+            }
+            val imm: InputMethodManager =
+                this.context?.getSystemService(Context.INPUT_METHOD_SERVICE) as InputMethodManager
+            imm.hideSoftInputFromWindow(view?.windowToken, 0)
+            addressText.visibility = View.VISIBLE
+            addressEditText.visibility = View.GONE
+            addressButton.setText("Change location")
         }
+    }
+
+    private fun onSpotifyButtonClick() {
+        val intent = Intent(Intent.ACTION_MAIN)
+        intent.component = ComponentName("com.spotify.music", "com.spotify.music.MainActivity")
+        context?.startActivity(intent)
     }
 
     private fun onTimerButtonClick() {
@@ -332,8 +357,6 @@ class ScannerFragment : Fragment() {
             timerText.visibility = View.VISIBLE
             timerTimePicker.visibility = View.GONE
             timerButton.setText("Change time")
-
-            runAppIntent(2) //delete
         }
     }
 
@@ -351,9 +374,6 @@ class ScannerFragment : Fragment() {
             else {
                 playlistLink = playlistLinkText.text.toString()
             }
-
-            runAppIntent(3) //delete
-
             val imm: InputMethodManager =
                 this.context?.getSystemService(Context.INPUT_METHOD_SERVICE) as InputMethodManager
             imm.hideSoftInputFromWindow(view?.windowToken, 0)
@@ -451,11 +471,6 @@ class ScannerFragment : Fragment() {
     }
 
     private fun loadSVM() {
-        // delete later
-//        viewSwitcher.showNext()
-//        prevCalib = 0.5
-
-
         val xFile = File(this.context?.filesDir,"x.txt")
         val yFile = File(this.context?.filesDir,"y.txt")
         if(xFile.exists() && yFile.exists()){
@@ -467,9 +482,15 @@ class ScannerFragment : Fragment() {
             Log.e("MACROSNAP","Dataset files not found.")
             debugTextView.text = "Calibration required"
             // request calibration UI
-            viewSwitcher.showNext()
-            prevCalib = 0.5
+//            viewSwitcher.showNext()
+//            prevCalib = 0.5
         }
+    }
+
+    private fun updateGraph(fsr1: Int, fsr2: Int, fsr3: Int) {
+        graph1.setData(listOf(DataPoint(0, 5), DataPoint(fsr1, 5)))
+        graph2.setData(listOf(DataPoint(0, 5), DataPoint(fsr2, 5)))
+        graph3.setData(listOf(DataPoint(0, 5), DataPoint(fsr3, 5)))
     }
 
     private fun preprocessData(): DoubleArray {
@@ -482,19 +503,21 @@ class ScannerFragment : Fragment() {
             max(fsr2Data.toDoubleArray()),
             max(fsr3Data.toDoubleArray())
         )
+        Log.e("MACROSNAP", "fsrMax " + fsrMax.joinToString(" "))
         val whichFsrMax = whichMax(fsrMax)
         val filterThreshold = 0.4 * fsrMax[whichFsrMax]
         val filterFsrTarget = when (whichFsrMax) {
-            1 -> {
+            0 -> {
                 fsr1Data
             }
-            2 -> {
+            1 -> {
                 fsr2Data
             }
             else -> {
                 fsr3Data
             }
         }
+        Log.e("MACROSNAP", "filterFsrTarget " + filterFsrTarget.joinToString(" "))
         for (i in filterFsrTarget.indices) {
             if (filterFsrTarget[i] >= filterThreshold) {
                 fsr1Filtered.add(fsr1Data[i])
@@ -502,6 +525,9 @@ class ScannerFragment : Fragment() {
                 fsr3Filtered.add(fsr3Data[i])
             }
         }
+        Log.e("MACROSNAP", "fsr1Filtered " + fsr1Filtered.joinToString(" "))
+        Log.e("MACROSNAP", "fsr2Filtered " + fsr2Filtered.joinToString(" "))
+        Log.e("MACROSNAP", "fsr3Filtered " + fsr3Filtered.joinToString(" "))
         // calculate mean and std
         return doubleArrayOf(
             mean(fsr1Filtered.toDoubleArray()),
@@ -557,6 +583,7 @@ class ScannerFragment : Fragment() {
         // determine top 3 gestures based on cross validation accuracy
         val classAccuracies = crossValidation(x, y)
         val meanAcc = mean(classAccuracies)
+        debugTextView.text = "SVM cross validation mean acc: %.4f".format(meanAcc)
         Log.e("MACROSNAP", "SVM acc: $meanAcc")
         val indices = arrayOf(1, 2, 3, 4, 5)
         val sortedIndices = indices.sortedByDescending { classAccuracies[it] }
@@ -573,11 +600,14 @@ class ScannerFragment : Fragment() {
         val kernel = GaussianKernel(1/6.0)  // gamma = 1/num_features
         model = ovr(x, y, { x, y -> svm(x, y, kernel, 1.0, 1E-3) })
         // save dataset
-        val xFile = File(this.context?.filesDir,"x.txt")
-        val yFile = File(this.context?.filesDir,"y.txt")
-        if(!xFile.exists() || !yFile.exists()){
-            writeData(x, y)
-        }
+//        val xFile = File(this.context?.filesDir,"x.txt")
+//        val yFile = File(this.context?.filesDir,"y.txt")
+//        if(!xFile.exists() || !yFile.exists()){
+//            writeData(x, y)
+//        }
+        datasetY.clear()
+        datasetX.clear()
+        datasetIndex = 0
     }
 
     private fun emptyData() {
@@ -591,7 +621,7 @@ class ScannerFragment : Fragment() {
         Log.e("MACROSNAP", "Updating UI status: $status")
         if (status == 1 && prevCalib == 0.0) {
             viewSwitcher.showNext()  // switch from normal to calibration UI
-        } else if (status == 0 && prevCalib >= 7.0) {
+        } else if (status == 0 && prevCalib >= 1.0) {
             viewSwitcher.showPrevious()  // switch from calibration to normal UI
         }
         if (status > 0) {
@@ -634,9 +664,8 @@ class ScannerFragment : Fragment() {
             val gesture1Text = GestureType.values()[gestureSelection1].str
             val gesture2Text = GestureType.values()[gestureSelection2].str
             val gesture3Text = GestureType.values()[gestureSelection3].str
-            calibDescription.text = "Recommended gestures and accuracy: \n  " + gesture1Text + " (set to Task 1) %.2f \n  ".format(gesture1Accuracy*100) + gesture2Text + " (set to Task 2) %.2f \n  ".format(gesture1Accuracy*100) + gesture3Text + " (set to Task 3) %.2f ".format(gesture3Accuracy) + "\nClick 'START SCANNING' to start using Macro Snap!"
+            calibDescription.text = "Recommended gestures and accuracy: \n  " + gesture1Text + " (set to Task 1) %.2f \n  ".format(gesture1Accuracy*100) + gesture2Text + " (set to Task 2) %.2f \n  ".format(gesture2Accuracy*100) + gesture3Text + " (set to Task 3) %.2f ".format(gesture3Accuracy*100) + "\nClick UI button to start using Macro Snap!"
             calibImage.setImageResource(android.R.color.transparent)
-            onStopScannerButtonClick()
         }
         else {
             val imageId = resources.getIdentifier(calibImageDrawables[status-1], "drawable", activity?.packageName)
@@ -648,11 +677,9 @@ class ScannerFragment : Fragment() {
             progressBar.visibility = View.VISIBLE
             progressText.visibility = View.VISIBLE
             progressText.text = "$currGestureCount/5"
-            if (currGestureCount >= 1) {
+            progressBar.progress = 0
+            for (i in 1..currGestureCount) {
                 progressBar.incrementProgressBy(20)
-            }
-            else {
-                progressBar.progress = 0
             }
         }
         else {
@@ -669,7 +696,8 @@ class ScannerFragment : Fragment() {
             }
             gestureSelection1 -> {
                 // run task 1
-                tasks?.alarm("Macro Snap Alarm", alarmHour, alarmMinute)
+                tasks?.maps(address)
+//                tasks?.alarm("Macro Snap Alarm", alarmHour, alarmMinute)
                 return
             }
             gestureSelection2 -> {
@@ -688,6 +716,11 @@ class ScannerFragment : Fragment() {
 //                tasks?.maps(geoloc)
                 return
             }
+            gestureSelection4 -> {
+                // run task 4
+                tasks?.spotifyNext()
+                return
+            }
         }
     }
 
@@ -700,30 +733,44 @@ class ScannerFragment : Fragment() {
                 val serviceData = scanRecord.serviceData.values
                 val scanData = serviceData.elementAtOrNull(0)
                 if (scanData != null) {
-                    val battery = scanData[0].toUByte().toUInt()
-                    val fsr1 = scanData[1].toUByte().toUInt()
-                    val fsr2 = scanData[2].toUByte().toUInt()
-                    val fsr3 = scanData[3].toUByte().toUInt()
-                    val calib = scanData[4].toUByte().toUInt()
-                    val status = scanData[5].toUByte().toUInt()
-                    val connected = scanData[6].toUByte().toUInt()
-                    Log.e("MACROSNAP", deviceName)
+                    var battery = scanData[0].toUByte().toUInt().toInt()
+                    var fsr1 = scanData[1].toUByte().toUInt().toInt()
+                    var fsr2 = scanData[2].toUByte().toUInt().toInt()
+                    var fsr3 = scanData[3].toUByte().toUInt().toInt()
+                    var calib = scanData[4].toUByte().toUInt().toInt()
+                    var status = scanData[5].toUByte().toUInt().toInt()
+                    var connected = scanData[6].toUByte().toUInt().toInt()
+                    var gesture = scanData[7].toUByte().toUInt().toInt()
+                    if (fsr1 == 255) {
+                        fsr1 = 0
+                    }
+                    if (fsr2 == 255) {
+                        fsr2 = 0
+                    }
+                    if (fsr3 == 255) {
+                        fsr3 = 0
+                    }
                     Log.e(
                         "MACROSNAP",
-                        "vbat $battery, fsrs [$fsr1, $fsr2, $fsr3], calib $calib, status $status, connected $connected"
+                        "device $deviceName, vbat $battery, fsrs [$fsr1, $fsr2, $fsr3], calib $calib, status $status, connected $connected, gesture $gesture"
                     )
-                    debugTextView.text = "vbat $battery, fsrs [$fsr1, $fsr2, $fsr3], calib $calib, status $status, connected $connected"
+                    debugTextView.text = "$deviceName: vbat $battery, fsrs [$fsr1, $fsr2, $fsr3], calib $calib, status $status, connected $connected, gesture $gesture"
+
+                    updateGraph(fsr1, fsr2, fsr3)
 
                     // only store raw FSR values if
-                    // connected is 1 -> all modules of armband is wired
-                    // status is 1 -> snap was detected
+                    // gesture is 1 -> snap was detected
                     // needRestValue is true -> initial scans being received
-                    if (connected.toInt() == 1  && (status.toInt() == 1 || needRestValue)) {
-                        fsr1Data[dataIndex] = fsr1.toDouble() / 255.0 - fsrRestValue[0]
-                        fsr2Data[dataIndex] = fsr2.toDouble() / 255.0 - fsrRestValue[1]
-                        fsr3Data[dataIndex] = fsr3.toDouble() / 255.0 - fsrRestValue[2]
-                        debugTextView.text = "FSR1 %.4f FSR2 %.4f FSR3 %.4f".format(fsr1Data[dataIndex], fsr2Data[dataIndex], fsr3Data[dataIndex])
+                    if (gesture == 1 || needRestValue) {
+                        val normFsr1 = fsr1.toDouble() / 255.0 - fsrRestValue[0]
+                        val normFsr2 = fsr2.toDouble() / 255.0 - fsrRestValue[1]
+                        val normFsr3 = fsr3.toDouble() / 255.0 - fsrRestValue[2]
+                        fsr1Data.add(dataIndex, normFsr1)
+                        fsr2Data.add(dataIndex, normFsr2)
+                        fsr3Data.add(dataIndex, normFsr3)
                         dataIndex += 1
+                        debugTextView.text = "Recording gesture.. FSR1 %.3f FSR2 %.3f FSR3 %.3f".format(normFsr1, normFsr2, normFsr3)
+                        Log.e("MACROSNAP", "Stored data FSR1 %.4f FSR2 %.4f FSR3 %.4f".format(normFsr1, normFsr2, normFsr3))
                     }
 
                     // store average scan value used for normalization
@@ -737,8 +784,9 @@ class ScannerFragment : Fragment() {
                         emptyData()
                     }
 
+                    /*
                     // run prediction
-                    if (dataIndex >= arraySize && status.toInt() == 1 && calib.toInt() == 0) {
+                    if (prevGestureStatus == 1 && gesture == 0 && status == 0) {
                         val fsrFeatures = preprocessData()
                         Log.e("MACROSNAP", "Processed features " + fsrFeatures.joinToString())
                         // run svm
@@ -750,31 +798,42 @@ class ScannerFragment : Fragment() {
                         // reset list
                         emptyData()
                     }
-
-                    // run calibration
-                    if (dataIndex >= arraySize && calib.toInt() >= 2) {
+                    */
+                    // run gesture calibration
+                    if (prevGestureStatus == 1 && gesture == 0 && status >= 2) {
+                        Log.e("MACROSNAP", "Amount data stored " + (dataIndex+1).toString())
+                        Log.e("MACROSNAP", "fsr1Data " + fsr1Data.joinToString(" "))
+                        Log.e("MACROSNAP", "fsr2Data " + fsr2Data.joinToString(" "))
+                        Log.e("MACROSNAP", "fsr3Data " + fsr3Data.joinToString(" "))
                         val fsrFeatures = preprocessData()
                         Log.e("MACROSNAP", "Processed features " + fsrFeatures.joinToString())
-                        val label = calib.toInt() - 2
+                        val label = status - 1
                         datasetX.add(datasetIndex, fsrFeatures)
                         datasetY.add(datasetIndex, label)
                         datasetIndex += 1
-                        if (prevGestureLabel != label) {
-                            // if prev gesture is not the same, set the count to 1
-                            currGestureCount = 1
-                        }
-                        else {
-                            currGestureCount += 1
-                        }
+                        currGestureCount += 1
+                        Log.e("MACROSNAP", "Label $label gestures recorded $currGestureCount")
+                        // reset list
+                        emptyData()
                     }
 
-                    if (datasetIndex >= datasetSize && calib.toInt() == 7) {
+
+                    if (prevGestureStatus == 1 && gesture == 0 && status == 6 && currGestureCount == 1) {
                         // calibration data collection completed
+                        Log.e("MACROSNAP", "SVM training dataset size " + (datasetIndex+1).toString())
                         trainSVM(datasetX.toTypedArray(), datasetY.toIntArray())
                     }
 
                     // update UI
-                    updateUI(calib.toInt())
+                    if (status <= 7) {
+                        updateUI(status)
+                    }
+
+                    if (prevCalibStatus != status) {
+                        currGestureCount = 0
+                    }
+                    prevCalibStatus = status
+                    prevGestureStatus = gesture
                 }
             }
         }

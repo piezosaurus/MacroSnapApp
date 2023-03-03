@@ -12,6 +12,21 @@
         android:layout_height="wrap_content"
         android:orientation="vertical">
 
+        <com.piezosaurus.macrosnap.GraphView
+            android:id="@+id/graph1"
+            android:layout_width="fill_parent"
+            android:layout_height="10dp" />
+
+        <com.piezosaurus.macrosnap.GraphView
+            android:id="@+id/graph2"
+            android:layout_width="fill_parent"
+            android:layout_height="10dp" />
+
+        <com.piezosaurus.macrosnap.GraphView
+            android:id="@+id/graph3"
+            android:layout_width="fill_parent"
+            android:layout_height="10dp" />
+
         <TextView
             android:id="@+id/debug_status"
             android:layout_width="wrap_content"
@@ -88,25 +103,30 @@
                         android:layout_width="wrap_content"
                         android:layout_height="wrap_content"
                         android:layout_gravity="center"
-                        android:text="Alarm at: " />
+                        android:text="Navigate to: " />
 
                     <TextView
-                        android:id="@+id/alarm_time"
+                        android:id="@+id/address_text"
                         android:layout_width="wrap_content"
                         android:layout_height="wrap_content"
                         android:layout_gravity="center"
-                        android:textSize="30sp"
-                        android:text="9:00 AM" />
+                        android:layout_margin="10dp"
+                        android:textSize="20sp"
+                        android:text="Columbia Icefield"
+                        />
 
-                    <TimePicker
-                        android:id="@+id/alarmTimePicker"
+                    <EditText
+                        android:id="@+id/addressEditText"
                         android:layout_width="match_parent"
                         android:layout_height="wrap_content"
-                        android:timePickerMode="spinner"
+                        android:layout_centerInParent="true"
+                        android:layout_margin="10dp"
+                        android:textSize="20sp"
+                        android:hint="Enter address or location query"
                         android:visibility="gone" />
 
                     <Button
-                        android:id="@+id/alarmButton"
+                        android:id="@+id/addressButton"
                         android:layout_width="match_parent"
                         android:layout_height="wrap_content"
                         android:layout_margin="10dp"
@@ -115,7 +135,7 @@
                         android:clickable="true"
                         android:focusable="true"
                         android:textColor="@color/white"
-                        android:text="Change time" />
+                        android:text="Change location" />
 
                 </LinearLayout>
 
@@ -245,6 +265,54 @@
                         android:textColor="@color/white"
                         android:text="Change playlist" />
 
+                </LinearLayout>
+
+                <LinearLayout
+                    android:layout_width="fill_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="vertical"
+                    android:background="@color/colorPrimary"
+                    android:layout_marginHorizontal="10dp"
+                    android:layout_marginBottom="10dp">
+
+                    <LinearLayout
+                        android:layout_width="fill_parent"
+                        android:layout_height="wrap_content"
+                        android:layout_margin="10dp"
+                        android:orientation="horizontal">
+                        <TextView
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:layout_gravity="center"
+                            android:text="Task 4 Gesture:" />
+
+                        <Spinner
+                            android:id="@+id/spinner4"
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:layout_margin="10dp" />
+
+                    </LinearLayout>
+
+                    <TextView
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:layout_gravity="center"
+                        android:text="Play next song on Spotify"
+                        android:layout_marginBottom="10dp"
+                        />
+
+                    <Button
+                        android:id="@+id/spotifyButton"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:layout_margin="10dp"
+                        android:layout_weight="1"
+                        android:background="@color/colorPrimaryDark"
+                        android:clickable="true"
+                        android:focusable="true"
+                        android:textColor="@color/white"
+                        android:text="Open Spotify" />
                 </LinearLayout>
 
             </LinearLayout>

@@ -42,14 +42,19 @@ public class Tasks(val context: Context) {
         Log.i("TASK", "alarm")
     }
     
-    public fun maps (geoLocation: Uri) {
-        val intent = Intent(Intent.ACTION_VIEW).apply {
-            data = geoLocation
-        }
-        if (intent.resolveActivity(context.packageManager) != null) {
-            context.startActivity(intent)
-        }
-        Log.i("TASK", "map query $geoLocation")
+    public fun maps (locationStr: String) {
+        val location = locationStr.replace(" ", "+")
+        val gmmIntentUri = Uri.parse("google.navigation:q=$location")
+        val mapIntent = Intent(Intent.ACTION_VIEW, gmmIntentUri)
+        mapIntent.setPackage("com.google.android.apps.maps")
+        context.startActivity(mapIntent)
+//        val intent = Intent(Intent.ACTION_VIEW).apply {
+//            data = geoLocation
+//        }
+//        if (intent.resolveActivity(context.packageManager) != null) {
+//            context.startActivity(intent)
+//        }
+        Log.i("TASK", "map navigation $locationStr")
     }
 
     public fun spotify (playlistId: String) {
@@ -57,13 +62,16 @@ public class Tasks(val context: Context) {
             Intent(Intent.ACTION_VIEW, Uri.parse("spotify:playlist:$playlistId:play"))
         context.startActivity(spotifyIntent)
 
-//        val spotifyIntentNext =
-//            Intent("com.spotify.mobile.android.ui.widget.PLAY")
-//        spotifyIntentNext.putExtra("paused", false)
-//        spotifyIntentNext.setPackage("com.spotify.music")
-//        context.sendBroadcast(spotifyIntentNext)
-
         Log.i("TASK", "spotify $playlistId")
+    }
+
+    public fun spotifyNext () {
+        val spotifyIntentNext =
+            Intent("com.spotify.mobile.android.ui.widget.NEXT")
+        spotifyIntentNext.setPackage("com.spotify.music")
+        context.sendBroadcast(spotifyIntentNext)
+
+        Log.i("TASK", "spotify next")
     }
 
 }
