@@ -186,6 +186,7 @@ class ScannerFragment : Fragment() {
         addressEditText = view.findViewById(R.id.addressEditText)
         addressButton = view.findViewById(R.id.addressButton)
         addressButton.setOnClickListener { onAddressButtonClick() }
+        address = addressText.text.toString()
         // Task 2
         spinner2 = view.findViewById(R.id.spinner2)
         spinner2.onItemSelectedListener = (object : OnItemSelectedListener {
@@ -250,6 +251,7 @@ class ScannerFragment : Fragment() {
         playlistLinkEditText = view.findViewById(R.id.linkEditText)
         playlistLinkButton = view.findViewById(R.id.linkButton)
         playlistLinkButton.setOnClickListener { onplaylistLinkButtonClick() }
+        playlistLink = playlistLinkText.text.toString()
         // Task 4
         spinner4 = view.findViewById(R.id.spinner4)
         spinner4.onItemSelectedListener = (object : OnItemSelectedListener {
@@ -478,17 +480,17 @@ class ScannerFragment : Fragment() {
 
     private fun loadModel() {
         debugTextView.text = "Calibration required"
-        val xFile = File(this.context?.filesDir,"x.txt")
-        val yFile = File(this.context?.filesDir,"y.txt")
-        if(xFile.exists() && yFile.exists()){
-            Log.e("MACROSNAP","Dataset files found.")
-            debugTextView.text = "Found saved calibration"
-            val (x, y) = readData()
-            trainKNN(x, y)
-        } else {
-            Log.e("MACROSNAP","Dataset files not found.")
-            debugTextView.text = "Calibration required"
-        }
+//        val xFile = File(this.context?.filesDir,"x.txt")
+//        val yFile = File(this.context?.filesDir,"y.txt")
+//        if(xFile.exists() && yFile.exists()){
+//            Log.e("MACROSNAP","Dataset files found.")
+//            debugTextView.text = "Found saved calibration"
+//            val (x, y) = readData()
+//            trainKNN(x, y)
+//        } else {
+//            Log.e("MACROSNAP","Dataset files not found.")
+//            debugTextView.text = "Calibration required"
+//        }
     }
 
     private fun updateGraph(fsr1: Int, fsr2: Int, fsr3: Int) {
@@ -530,44 +532,43 @@ class ScannerFragment : Fragment() {
             Toast.makeText(activity, "Gesture data too short, hold for longer!", Toast.LENGTH_SHORT).show()
             Pair(false, doubleArrayOf())
         } else {
-            // calculate mean and std
+            // calculate mean
             Pair(true, doubleArrayOf(
                 mean(fsr1Filtered.toDoubleArray()),
                 mean(fsr2Filtered.toDoubleArray()),
-                mean(fsr3Filtered.toDoubleArray()),
-//                sd(fsr1Filtered.toDoubleArray()),
-//                sd(fsr2Filtered.toDoubleArray()),
-//                sd(fsr3Filtered.toDoubleArray())
+                mean(fsr3Filtered.toDoubleArray())
             ))
         }
     }
 
     private fun crossValidation(X: Array<DoubleArray>, Y: IntArray): DoubleArray {
-        // assumes dataset has at least 25 gestures, 5 for each
-        val kFold = 5
+        val kFold = 3
+        // shuffle dataset
+        val shuffleIndex = List(X.size) { Random.nextInt(0, X.size-1) }
+        val shuffledX = X.slice(shuffleIndex)
+        val shuffledY = Y.slice(shuffleIndex)
+        // split dataset into k partitions
+        val splitX = shuffledX.toList().chunked(Y.size / kFold)
+        val splitY = shuffledY.toList().chunked(Y.size / kFold)
         // k-fold cross validation
         val nClasses = 5
         val numCorrect = MutableList(nClasses) { 0 }
         val numTotal = MutableList(nClasses) { 0 }
         for (i in 0 until kFold) {
-            val testX = mutableListOf<DoubleArray>()
-            val testY = mutableListOf<Int>()
-            val trainX = X.toMutableList()
-            val trainY = Y.toMutableList()
-            for (k in 0 until 25 step 5) {
-                Log.e("MACROSNAP", "testY " + trainY[k].toString())
-                Log.e("MACROSNAP", "testX " + trainX[k].joinToString(" "))
-                testX.add(trainX.removeAt(k))
-                testY.add(trainY.removeAt(k))
+            val testX = splitX[i]
+            val testY = splitY[i]
+            val trainX: MutableList<DoubleArray> = ArrayList()
+            val trainY: MutableList<Int> = ArrayList()
+            for (j in 0 until kFold) {
+                if (i != j) {
+                    trainX += splitX[j]
+                    trainY += splitY[j]
+                }
             }
             Log.e("MACROSNAP", "Running cross validation split $i")
             Log.e("MACROSNAP", "Y " + Y.joinToString(" "))
             Log.e("MACROSNAP", "testY " + testY.toIntArray().joinToString(" "))
             Log.e("MACROSNAP", "trainY " + trainY.toIntArray().joinToString(" "))
-            // shuffle dataset
-            val shuffleIndex = List(trainY.size) { Random.nextInt(0, trainY.size-1) }
-            val shuffledX = trainX.toTypedArray().slice(shuffleIndex)
-            val shuffledY = trainY.toIntArray().slice(shuffleIndex)
             // train test model
             val model = KNN.fit(shuffledX.toTypedArray(), shuffledY.toIntArray(), 3)
             val confMatrix = ConfusionMatrix.of(testY.toIntArray(), model.predict(testX.toTypedArray())).matrix
@@ -626,7 +627,7 @@ class ScannerFragment : Fragment() {
     }
 
     private fun updateUI(status: Int) {
-        Log.e("MACROSNAP", "Updating UI status: $status")
+        Log.i("MACROSNAP", "Updating UI status: $status")
         if (status == 0 && prevCalib == 8) {
             viewSwitcher.showNext()  // switch from normal to calibration UI
         } else if (status == 8 && prevCalib < 8) {
@@ -740,7 +741,7 @@ class ScannerFragment : Fragment() {
 //                    if (fsr3 == 255) {
 //                        fsr3 = 0
 //                    }
-                    Log.e(
+                    Log.i(
                         "MACROSNAP",
                         "device $deviceName, vbat $battery, fsrs [$fsr1, $fsr2, $fsr3], calib $calib, status $status, connected $connected, gesture $gesture"
                     )
@@ -788,13 +789,13 @@ class ScannerFragment : Fragment() {
                     if (prevGestureStatus == 1 && gesture == 0 && status == 8) {
                         val (success, fsrFeatures) = preprocessData()
                         if (success) {
-                            Toast.makeText(activity, "Calculated features "+ fsrFeatures.joinToString(), Toast.LENGTH_SHORT).show()
+//                            Toast.makeText(activity, "Calculated features "+ fsrFeatures.joinToString(), Toast.LENGTH_SHORT).show()
                             Log.e("MACROSNAP", "Processed features " + fsrFeatures.joinToString())
                             // run model
                             val pred = knn!!.predict(fsrFeatures) + 1 // type int
                             val detectedGesture = GestureType.values()[pred]
                             Log.e("MACROSNAP", "Predicted gesture " + detectedGesture.str)
-                            Toast.makeText(activity, "Predicted gesture" + detectedGesture.str, Toast.LENGTH_SHORT).show()
+                            Toast.makeText(activity, "Predicted gesture " + detectedGesture.str, Toast.LENGTH_SHORT).show()
                             // run task
                             runAppIntent(pred)
                         } else {
@@ -835,6 +836,14 @@ class ScannerFragment : Fragment() {
                         snapWaveForm1.clear()
                         snapWaveForm2.clear()
                         snapWaveForm3.clear()
+                    }
+
+                    if (gesture == 2) {
+                        while (currGestureCount > 0) {
+                            datasetX.removeLast()
+                            datasetY.removeLast()
+                            currGestureCount -= 1
+                        }
                     }
 
                     // run gesture calibration
