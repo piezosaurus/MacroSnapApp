@@ -117,8 +117,8 @@ class ScannerFragment : Fragment() {
     private var prevCalibStatus: Int = 0
     private var currGestureCount: Int = 0
 
-    // SVM model
-    private var model: OneVersusRest<DoubleArray>? = null
+    // KNN model
+    private var knn: KNN<DoubleArray>? = null
     private var gesture1Accuracy = 0.0
     private var gesture2Accuracy = 0.0
     private var gesture3Accuracy = 0.0
@@ -134,7 +134,7 @@ class ScannerFragment : Fragment() {
         initViews(view)
         tasks = Tasks(context!!)
         setUpBluetoothManager()
-        loadSVM()
+        loadModel()
         // max continuous scan time is 30 min
         Timer().scheduleAtFixedRate(object : TimerTask() {
             override fun run() {
@@ -476,14 +476,15 @@ class ScannerFragment : Fragment() {
         return Dataset(x, y)
     }
 
-    private fun loadSVM() {
+    private fun loadModel() {
+        debugTextView.text = "Calibration required"
         val xFile = File(this.context?.filesDir,"x.txt")
         val yFile = File(this.context?.filesDir,"y.txt")
         if(xFile.exists() && yFile.exists()){
             Log.e("MACROSNAP","Dataset files found.")
             debugTextView.text = "Found saved calibration"
             val (x, y) = readData()
-            trainSVM(x, y)
+            trainKNN(x, y)
         } else {
             Log.e("MACROSNAP","Dataset files not found.")
             debugTextView.text = "Calibration required"
@@ -534,42 +535,41 @@ class ScannerFragment : Fragment() {
                 mean(fsr1Filtered.toDoubleArray()),
                 mean(fsr2Filtered.toDoubleArray()),
                 mean(fsr3Filtered.toDoubleArray()),
-                sd(fsr1Filtered.toDoubleArray()),
-                sd(fsr2Filtered.toDoubleArray()),
-                sd(fsr3Filtered.toDoubleArray())
+//                sd(fsr1Filtered.toDoubleArray()),
+//                sd(fsr2Filtered.toDoubleArray()),
+//                sd(fsr3Filtered.toDoubleArray())
             ))
         }
     }
 
     private fun crossValidation(X: Array<DoubleArray>, Y: IntArray): DoubleArray {
-        val kFold = 3
-        // shuffle dataset
-        val shuffleIndex = List(X.size) { Random.nextInt(0, X.size-1) }
-        val shuffledX = X.slice(shuffleIndex)
-        val shuffledY = Y.slice(shuffleIndex)
-        // split dataset into k partitions
-        val splitX = shuffledX.toList().chunked(Y.size / kFold)
-        val splitY = shuffledY.toList().chunked(Y.size / kFold)
+        // assumes dataset has at least 25 gestures, 5 for each
+        val kFold = 5
         // k-fold cross validation
         val nClasses = 5
         val numCorrect = MutableList(nClasses) { 0 }
         val numTotal = MutableList(nClasses) { 0 }
         for (i in 0 until kFold) {
-            val testX = splitX[i]
-            val testY = splitY[i]
-            val trainX: MutableList<DoubleArray> = ArrayList()
-            val trainY: MutableList<Int> = ArrayList()
-            for (j in 0 until kFold) {
-                if (i != j) {
-                    trainX += splitX[j]
-                    trainY += splitY[j]
-                }
+            val testX = mutableListOf<DoubleArray>()
+            val testY = mutableListOf<Int>()
+            val trainX = X.toMutableList()
+            val trainY = Y.toMutableList()
+            for (k in 0 until 25 step 5) {
+                Log.e("MACROSNAP", "testY " + trainY[k].toString())
+                Log.e("MACROSNAP", "testX " + trainX[k].joinToString(" "))
+                testX.add(trainX.removeAt(k))
+                testY.add(trainY.removeAt(k))
             }
             Log.e("MACROSNAP", "Running cross validation split $i")
+            Log.e("MACROSNAP", "Y " + Y.joinToString(" "))
             Log.e("MACROSNAP", "testY " + testY.toIntArray().joinToString(" "))
             Log.e("MACROSNAP", "trainY " + trainY.toIntArray().joinToString(" "))
-            val kernel = GaussianKernel(1/6.0)  // gamma = 1/num_features
-            val model = ovr(trainX.toTypedArray(), trainY.toIntArray(), { x, y -> svm(x, y, kernel, 1.0, 1E-3) })
+            // shuffle dataset
+            val shuffleIndex = List(trainY.size) { Random.nextInt(0, trainY.size-1) }
+            val shuffledX = trainX.toTypedArray().slice(shuffleIndex)
+            val shuffledY = trainY.toIntArray().slice(shuffleIndex)
+            // train test model
+            val model = KNN.fit(shuffledX.toTypedArray(), shuffledY.toIntArray(), 3)
             val confMatrix = ConfusionMatrix.of(testY.toIntArray(), model.predict(testX.toTypedArray())).matrix
             for (k in confMatrix.indices) {
                 numCorrect[k] += confMatrix[k][k]
@@ -585,9 +585,9 @@ class ScannerFragment : Fragment() {
         return accuracy.toDoubleArray()
     }
 
-    private fun trainSVM(x: Array<DoubleArray>, y: IntArray) {
+    private fun trainKNN(x: Array<DoubleArray>, y: IntArray) {
         // save dataset
-        Log.e("MACROSNAP", "SVM training dataset size " + y.size.toString())
+        Log.e("MACROSNAP", "KNN training dataset size " + y.size.toString())
         val xFile = File(this.context?.filesDir,"x.txt")
         val yFile = File(this.context?.filesDir,"y.txt")
         if(!xFile.exists() || !yFile.exists()){
@@ -596,8 +596,8 @@ class ScannerFragment : Fragment() {
         // determine top 3 gestures based on cross validation accuracy
         val classAccuracies = crossValidation(x, y)
         val meanAcc = mean(classAccuracies)
-        debugTextView.text = "SVM cross validation mean acc: %.4f".format(meanAcc)
-        Log.e("MACROSNAP", "SVM cross validation mean acc: $meanAcc")
+        debugTextView.text = "KNN cross validation mean acc: %.4f".format(meanAcc)
+        Log.e("MACROSNAP", "KNN cross validation mean acc: $meanAcc")
         val indices = arrayOf(0, 1, 2, 3, 4)
         val sortedIndices = indices.sortedByDescending { classAccuracies[it] }
         gesture1Accuracy = classAccuracies[sortedIndices[0]]
@@ -613,8 +613,7 @@ class ScannerFragment : Fragment() {
         Log.e("MACROSNAP", "Task 2 gesture $gestureSelection2 acc: %.4f".format(gesture2Accuracy))
         Log.e("MACROSNAP", "Task 3 gesture $gestureSelection3 acc: %.4f".format(gesture3Accuracy))
         // train on full dataset
-        val kernel = GaussianKernel(1/6.0)  // gamma = 1/num_features
-        model = ovr(x, y, { x, y -> svm(x, y, kernel, 1.0, 1E-3) })
+        knn = KNN.fit(x, y, 3)
 //        datasetY.clear()
 //        datasetX.clear()
     }
@@ -732,15 +731,15 @@ class ScannerFragment : Fragment() {
                     var status = scanData[5].toUByte().toUInt().toInt()
                     var connected = scanData[6].toUByte().toUInt().toInt()
                     var gesture = scanData[7].toUByte().toUInt().toInt()
-                    if (fsr1 == 255) {
-                        fsr1 = 0
-                    }
-                    if (fsr2 == 255) {
-                        fsr2 = 0
-                    }
-                    if (fsr3 == 255) {
-                        fsr3 = 0
-                    }
+//                    if (fsr1 == 255) {
+//                        fsr1 = 0
+//                    }
+//                    if (fsr2 == 255) {
+//                        fsr2 = 0
+//                    }
+//                    if (fsr3 == 255) {
+//                        fsr3 = 0
+//                    }
                     Log.e(
                         "MACROSNAP",
                         "device $deviceName, vbat $battery, fsrs [$fsr1, $fsr2, $fsr3], calib $calib, status $status, connected $connected, gesture $gesture"
@@ -758,9 +757,9 @@ class ScannerFragment : Fragment() {
                     // gesture is 1 -> snap was detected
                     // needRestValue is true -> initial scans being received
                     if (gesture == 1 || needRestValue) {
-                        val normFsr1 = fsr1.toDouble() / 255.0 - fsrRestValue[0]
-                        val normFsr2 = fsr2.toDouble() / 255.0 - fsrRestValue[1]
-                        val normFsr3 = fsr3.toDouble() / 255.0 - fsrRestValue[2]
+                        val normFsr1 = fsr1.toDouble() - fsrRestValue[0]
+                        val normFsr2 = fsr2.toDouble() - fsrRestValue[1]
+                        val normFsr3 = fsr3.toDouble() - fsrRestValue[2]
                         fsr1Data.add(dataIndex, normFsr1)
                         fsr2Data.add(dataIndex, normFsr2)
                         fsr3Data.add(dataIndex, normFsr3)
@@ -789,9 +788,10 @@ class ScannerFragment : Fragment() {
                     if (prevGestureStatus == 1 && gesture == 0 && status == 8) {
                         val (success, fsrFeatures) = preprocessData()
                         if (success) {
+                            Toast.makeText(activity, "Calculated features "+ fsrFeatures.joinToString(), Toast.LENGTH_SHORT).show()
                             Log.e("MACROSNAP", "Processed features " + fsrFeatures.joinToString())
-                            // run svm
-                            val pred = model!!.predict(fsrFeatures) + 1 // type int
+                            // run model
+                            val pred = knn!!.predict(fsrFeatures) + 1 // type int
                             val detectedGesture = GestureType.values()[pred]
                             Log.e("MACROSNAP", "Predicted gesture " + detectedGesture.str)
                             Toast.makeText(activity, "Predicted gesture" + detectedGesture.str, Toast.LENGTH_SHORT).show()
@@ -845,6 +845,7 @@ class ScannerFragment : Fragment() {
                         Log.e("MACROSNAP", "fsr3Data " + fsr3Data.joinToString(" "))
                         val (success, fsrFeatures) = preprocessData()
                         if (success) {
+                            Toast.makeText(activity, "Calculated features "+ fsrFeatures.joinToString(), Toast.LENGTH_SHORT).show()
                             Log.e("MACROSNAP", "Processed features " + fsrFeatures.joinToString())
                             val label = status - 2
                             datasetX.add(fsrFeatures)
@@ -861,7 +862,7 @@ class ScannerFragment : Fragment() {
 
                     // calibration data collection completed
                     if (prevCalibStatus == 6 && status == 7) {
-                        trainSVM(datasetX.toTypedArray(), datasetY.toIntArray())
+                        trainKNN(datasetX.toTypedArray(), datasetY.toIntArray())
                     }
 
                     // update UI
