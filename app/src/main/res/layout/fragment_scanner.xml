@@ -112,7 +112,7 @@
                         android:layout_gravity="center"
                         android:layout_margin="10dp"
                         android:textSize="20sp"
-                        android:text="Columbia Icefield"
+                        android:text="330 Phillip St"
                         />
 
                     <EditText
@@ -372,17 +372,20 @@
                     android:adjustViewBounds="true"
                     />
 
-                <Button
-                    android:id="@+id/nextUI"
-                    android:layout_width="wrap_content"
-                    android:layout_height="wrap_content"
-                    android:layout_margin="10dp"
-                    android:layout_weight="1"
-                    android:background="@color/colorPrimaryDark"
-                    android:clickable="true"
-                    android:focusable="true"
-                    android:textColor="@color/white"
-                    android:text="Next" />
+                <com.piezosaurus.macrosnap.GraphView
+                    android:id="@+id/snap_graph1"
+                    android:layout_width="fill_parent"
+                    android:layout_height="200dp" />
+
+                <com.piezosaurus.macrosnap.GraphView
+                    android:id="@+id/snap_graph2"
+                    android:layout_width="fill_parent"
+                    android:layout_height="200dp" />
+
+                <com.piezosaurus.macrosnap.GraphView
+                    android:id="@+id/snap_graph3"
+                    android:layout_width="fill_parent"
+                    android:layout_height="200dp" />
 
             </LinearLayout>
 

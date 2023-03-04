@@ -27,6 +27,7 @@ import smile.validation.*
 import smile.validation.metric.ConfusionMatrix
 import java.io.*
 import java.util.*
+import kotlin.math.abs
 import kotlin.random.Random
 
 
@@ -70,7 +71,10 @@ class ScannerFragment : Fragment() {
     private lateinit var progressBar: ProgressBar
     private lateinit var calibDescription: TextView
     private lateinit var calibImage: ImageView
-    private lateinit var nextButton: Button  // delete later
+    // delete later
+    private lateinit var snapGraph1: GraphView
+    private lateinit var snapGraph2: GraphView
+    private lateinit var snapGraph3: GraphView
 
     private var btManager: BluetoothManager? = null
     private var btAdapter: BluetoothAdapter? = null
@@ -89,14 +93,17 @@ class ScannerFragment : Fragment() {
     private var gestureSelection4: Int = 0
 
     // Calibration
-    private var prevCalib: Double = 0.0
+    private var prevCalib: Int = 8
     private var calibImageDrawables = arrayOf<String>()
     private var calibDescriptionText = arrayOf<String>()
+    private var snapWaveForm1 = mutableListOf<Int>()
+    private var snapWaveForm2 = mutableListOf<Int>()
+    private var snapWaveForm3 = mutableListOf<Int>()
 
     // FSR raw values (range 0 to 255)
     // 0 is no force, 255 is high force
     private var needRestValue: Boolean = true
-    private val arraySize: Int = 25
+    private val arraySize: Int = 20
     private var dataIndex: Int = 0
     private val fsrRestValue = doubleArrayOf(0.0, 0.0, 0.0)
     private val fsr1Data = mutableListOf<Double>()
@@ -104,9 +111,7 @@ class ScannerFragment : Fragment() {
     private val fsr3Data = mutableListOf<Double>()
     private var prevGestureStatus: Int = 0
 
-    // Store training data (min 10 samples per gesture)
-    private val datasetSize: Int = 50
-    private var datasetIndex: Int = 0
+    // Store training data
     private val datasetX = mutableListOf<DoubleArray>()
     private val datasetY = mutableListOf<Int>()
     private var prevCalibStatus: Int = 0
@@ -141,7 +146,7 @@ class ScannerFragment : Fragment() {
 
     companion object {
         private const val REQUEST_ENABLE_BT = 1
-        private const val PERMISSION_REQUEST_COARSE_LOCATION = 1
+        private const val PERMISSION_REQUEST_FINE_LOCATION = 1
     }
 
     private fun initViews(view: View) {
@@ -279,14 +284,15 @@ class ScannerFragment : Fragment() {
         calibImageDrawables = resources.getStringArray(R.array.calib_images)
         calibDescriptionText = resources.getStringArray(R.array.calib_descriptions)
         // delete later
-        nextButton = view.findViewById(R.id.nextUI)
-        nextButton.setOnClickListener { onNextUIButtonClick() }
+        snapGraph1 = view.findViewById(R.id.snap_graph1)
+        snapGraph2 = view.findViewById(R.id.snap_graph2)
+        snapGraph3 = view.findViewById(R.id.snap_graph3)
     }
 
     private fun onStartScannerButtonClick() {
         startButton.visibility = View.GONE
         stopButton.visibility = View.VISIBLE
-        val names = arrayOf("Panda", "Grizz", "Ice Bear")
+        val names = arrayOf("Grizz")  // arrayOf("Panda", "Grizz", "Ice Bear")
         val filters: MutableList<ScanFilter> = ArrayList()
         for (name in names) {
             val filter = ScanFilter.Builder()
@@ -395,16 +401,16 @@ class ScannerFragment : Fragment() {
     }
 
     private fun checkForLocationPermission() {
-        // Make sure we have access coarse location enabled, if not, prompt the user to enable it
-        if (activity!!.checkSelfPermission(Manifest.permission.ACCESS_COARSE_LOCATION) != PackageManager.PERMISSION_GRANTED) {
+        // Make sure we have access fine location enabled, if not, prompt the user to enable it
+        if (activity!!.checkSelfPermission(Manifest.permission.ACCESS_FINE_LOCATION) != PackageManager.PERMISSION_GRANTED) {
             val builder = AlertDialog.Builder(activity)
             builder.setTitle("This app needs location access")
-            builder.setMessage("Please grant location access so this app can detect  peripherals.")
+            builder.setMessage("Please grant location access so this app can detect peripherals.")
             builder.setPositiveButton(android.R.string.ok, null)
             builder.setOnDismissListener {
                 requestPermissions(
-                    arrayOf(Manifest.permission.ACCESS_COARSE_LOCATION),
-                    PERMISSION_REQUEST_COARSE_LOCATION
+                    arrayOf(Manifest.permission.ACCESS_FINE_LOCATION),
+                    PERMISSION_REQUEST_FINE_LOCATION
                 )
             }
             builder.show()
@@ -416,7 +422,7 @@ class ScannerFragment : Fragment() {
         permissions: Array<String>, grantResults: IntArray
     ) {
         when (requestCode) {
-            PERMISSION_REQUEST_COARSE_LOCATION -> {
+            PERMISSION_REQUEST_FINE_LOCATION -> {
                 if (grantResults[0] == PackageManager.PERMISSION_GRANTED) {
                     println("coarse location permission granted")
                 } else {
@@ -481,19 +487,16 @@ class ScannerFragment : Fragment() {
         } else {
             Log.e("MACROSNAP","Dataset files not found.")
             debugTextView.text = "Calibration required"
-            // request calibration UI
-//            viewSwitcher.showNext()
-//            prevCalib = 0.5
         }
     }
 
     private fun updateGraph(fsr1: Int, fsr2: Int, fsr3: Int) {
-        graph1.setData(listOf(DataPoint(0, 5), DataPoint(fsr1, 5)))
-        graph2.setData(listOf(DataPoint(0, 5), DataPoint(fsr2, 5)))
-        graph3.setData(listOf(DataPoint(0, 5), DataPoint(fsr3, 5)))
+        graph1.setData(listOf(DataPoint(0, 5), DataPoint(fsr1, 5)), 255, 10)
+        graph2.setData(listOf(DataPoint(0, 5), DataPoint(fsr2, 5)), 255, 10)
+        graph3.setData(listOf(DataPoint(0, 5), DataPoint(fsr3, 5)), 255, 10)
     }
 
-    private fun preprocessData(): DoubleArray {
+    private fun preprocessData(): Pair<Boolean,DoubleArray> {
         // segment data
         val fsr1Filtered = mutableListOf<Double>()
         val fsr2Filtered = mutableListOf<Double>()
@@ -504,64 +507,67 @@ class ScannerFragment : Fragment() {
             max(fsr3Data.toDoubleArray())
         )
         Log.e("MACROSNAP", "fsrMax " + fsrMax.joinToString(" "))
-        val whichFsrMax = whichMax(fsrMax)
-        val filterThreshold = 0.4 * fsrMax[whichFsrMax]
-        val filterFsrTarget = when (whichFsrMax) {
-            0 -> {
-                fsr1Data
+        val filterThreshold = 0.4 * max(fsrMax)
+        var start = false
+        for (i in fsr1Data.indices) {
+            // make sure to get one continuous segment of data
+            val filterValue = abs(fsr1Data[i]) + abs(fsr2Data[i]) + abs(fsr3Data[i])
+            if (start && filterValue < filterThreshold) {
+                break
             }
-            1 -> {
-                fsr2Data
-            }
-            else -> {
-                fsr3Data
-            }
-        }
-        Log.e("MACROSNAP", "filterFsrTarget " + filterFsrTarget.joinToString(" "))
-        for (i in filterFsrTarget.indices) {
-            if (filterFsrTarget[i] >= filterThreshold) {
+            if ((filterValue >= filterThreshold && !start) || start) {
                 fsr1Filtered.add(fsr1Data[i])
                 fsr2Filtered.add(fsr2Data[i])
                 fsr3Filtered.add(fsr3Data[i])
+                start = true
             }
         }
         Log.e("MACROSNAP", "fsr1Filtered " + fsr1Filtered.joinToString(" "))
         Log.e("MACROSNAP", "fsr2Filtered " + fsr2Filtered.joinToString(" "))
         Log.e("MACROSNAP", "fsr3Filtered " + fsr3Filtered.joinToString(" "))
-        // calculate mean and std
-        return doubleArrayOf(
-            mean(fsr1Filtered.toDoubleArray()),
-            mean(fsr2Filtered.toDoubleArray()),
-            mean(fsr3Filtered.toDoubleArray()),
-            sd(fsr1Filtered.toDoubleArray()),
-            sd(fsr2Filtered.toDoubleArray()),
-            sd(fsr3Filtered.toDoubleArray())
-        )
+        return if (fsr1Filtered.size < 5) {
+            Toast.makeText(activity, "Gesture data too short, hold for longer!", Toast.LENGTH_SHORT).show()
+            Pair(false, doubleArrayOf())
+        } else {
+            // calculate mean and std
+            Pair(true, doubleArrayOf(
+                mean(fsr1Filtered.toDoubleArray()),
+                mean(fsr2Filtered.toDoubleArray()),
+                mean(fsr3Filtered.toDoubleArray()),
+                sd(fsr1Filtered.toDoubleArray()),
+                sd(fsr2Filtered.toDoubleArray()),
+                sd(fsr3Filtered.toDoubleArray())
+            ))
+        }
     }
 
     private fun crossValidation(X: Array<DoubleArray>, Y: IntArray): DoubleArray {
+        val kFold = 3
         // shuffle dataset
         val shuffleIndex = List(X.size) { Random.nextInt(0, X.size-1) }
         val shuffledX = X.slice(shuffleIndex)
         val shuffledY = Y.slice(shuffleIndex)
-        // split dataset into 5 chunks
-        val splitX = shuffledX.toList().chunked(5)
-        val splitY = shuffledY.toList().chunked(5)
-        // 5-fold cross validation
-        val nClasses = 9  // change to 6 later
+        // split dataset into k partitions
+        val splitX = shuffledX.toList().chunked(Y.size / kFold)
+        val splitY = shuffledY.toList().chunked(Y.size / kFold)
+        // k-fold cross validation
+        val nClasses = 5
         val numCorrect = MutableList(nClasses) { 0 }
         val numTotal = MutableList(nClasses) { 0 }
-        for (i in splitX.indices) {
+        for (i in 0 until kFold) {
             val testX = splitX[i]
             val testY = splitY[i]
             val trainX: MutableList<DoubleArray> = ArrayList()
             val trainY: MutableList<Int> = ArrayList()
-            for (j in splitX.indices) {
+            for (j in 0 until kFold) {
                 if (i != j) {
                     trainX += splitX[j]
                     trainY += splitY[j]
                 }
             }
+            Log.e("MACROSNAP", "Running cross validation split $i")
+            Log.e("MACROSNAP", "testY " + testY.toIntArray().joinToString(" "))
+            Log.e("MACROSNAP", "trainY " + trainY.toIntArray().joinToString(" "))
             val kernel = GaussianKernel(1/6.0)  // gamma = 1/num_features
             val model = ovr(trainX.toTypedArray(), trainY.toIntArray(), { x, y -> svm(x, y, kernel, 1.0, 1E-3) })
             val confMatrix = ConfusionMatrix.of(testY.toIntArray(), model.predict(testX.toTypedArray())).matrix
@@ -580,34 +586,37 @@ class ScannerFragment : Fragment() {
     }
 
     private fun trainSVM(x: Array<DoubleArray>, y: IntArray) {
+        // save dataset
+        Log.e("MACROSNAP", "SVM training dataset size " + y.size.toString())
+        val xFile = File(this.context?.filesDir,"x.txt")
+        val yFile = File(this.context?.filesDir,"y.txt")
+        if(!xFile.exists() || !yFile.exists()){
+            writeData(x, y)
+        }
         // determine top 3 gestures based on cross validation accuracy
         val classAccuracies = crossValidation(x, y)
         val meanAcc = mean(classAccuracies)
         debugTextView.text = "SVM cross validation mean acc: %.4f".format(meanAcc)
-        Log.e("MACROSNAP", "SVM acc: $meanAcc")
-        val indices = arrayOf(1, 2, 3, 4, 5)
+        Log.e("MACROSNAP", "SVM cross validation mean acc: $meanAcc")
+        val indices = arrayOf(0, 1, 2, 3, 4)
         val sortedIndices = indices.sortedByDescending { classAccuracies[it] }
-        gestureSelection1 = sortedIndices[0]
-        gestureSelection2 = sortedIndices[1]
-        gestureSelection3 = sortedIndices[2]
-        gesture1Accuracy = classAccuracies[gestureSelection1]
-        gesture2Accuracy = classAccuracies[gestureSelection2]
-        gesture3Accuracy = classAccuracies[gestureSelection3]
+        gesture1Accuracy = classAccuracies[sortedIndices[0]]
+        gesture2Accuracy = classAccuracies[sortedIndices[1]]
+        gesture3Accuracy = classAccuracies[sortedIndices[2]]
+        gestureSelection1 = sortedIndices[0] + 1
+        gestureSelection2 = sortedIndices[1] + 1
+        gestureSelection3 = sortedIndices[2] + 1
+        spinner1.setSelection(gestureSelection1)
+        spinner2.setSelection(gestureSelection2)
+        spinner3.setSelection(gestureSelection3)
         Log.e("MACROSNAP", "Task 1 gesture $gestureSelection1 acc: %.4f".format(gesture1Accuracy))
         Log.e("MACROSNAP", "Task 2 gesture $gestureSelection2 acc: %.4f".format(gesture2Accuracy))
         Log.e("MACROSNAP", "Task 3 gesture $gestureSelection3 acc: %.4f".format(gesture3Accuracy))
         // train on full dataset
         val kernel = GaussianKernel(1/6.0)  // gamma = 1/num_features
         model = ovr(x, y, { x, y -> svm(x, y, kernel, 1.0, 1E-3) })
-        // save dataset
-//        val xFile = File(this.context?.filesDir,"x.txt")
-//        val yFile = File(this.context?.filesDir,"y.txt")
-//        if(!xFile.exists() || !yFile.exists()){
-//            writeData(x, y)
-//        }
-        datasetY.clear()
-        datasetX.clear()
-        datasetIndex = 0
+//        datasetY.clear()
+//        datasetX.clear()
     }
 
     private fun emptyData() {
@@ -619,61 +628,39 @@ class ScannerFragment : Fragment() {
 
     private fun updateUI(status: Int) {
         Log.e("MACROSNAP", "Updating UI status: $status")
-        if (status == 1 && prevCalib == 0.0) {
+        if (status == 0 && prevCalib == 8) {
             viewSwitcher.showNext()  // switch from normal to calibration UI
-        } else if (status == 0 && prevCalib >= 1.0) {
+        } else if (status == 8 && prevCalib < 8) {
             viewSwitcher.showPrevious()  // switch from calibration to normal UI
         }
-        if (status > 0) {
+        if (status != 8) {
             setCalibrationUI(status)
         }
-        prevCalib = status.toDouble()
-    }
-
-    private fun onNextUIButtonClick() { // delete later
-        Log.e("MACROSNAP", "$prevCalib $currGestureCount")
-        var status = prevCalib.toInt()
-        if (prevCalib == 0.5) {
-            status = 1
-        }
-        else if (prevCalib <= 1.0 || (prevCalib >= 1.0 && currGestureCount >= 5)) {
-            status = (prevCalib + 1).toInt()
-            currGestureCount = 0
-        }
-        else if (prevCalib >= 1.0 && prevCalib < 7.0) {
-            currGestureCount += 1
-        }
-        else if (prevCalib == 7.0) {
-            status = 0
-        }
-        updateUI(status)
+        prevCalib = status
     }
 
     private fun setCalibrationUI(status: Int) {
         Log.e("MACROSNAP", "Set Calibration UI $status")
-        if (status == 1) {
+        progressBar.visibility = View.GONE
+        progressText.visibility = View.GONE
+        if (status == 0) {
+            calibTitle.text = "Start Calibration"
+            calibDescription.text = resources.getString(R.string.calib_start)
+            val imageId = resources.getIdentifier("armband_placement", "drawable", activity?.packageName)
+            calibImage.setImageResource(imageId)
+        }
+        else if (status == 1) {
             calibTitle.text = "Snap Calibration"
-        }
-        else if (status < 7) {
-            val gestureText = GestureType.values()[status-1].str
-            calibTitle.text = "Gesture Calibration: $gestureText"
-        }
-
-        if (status == 7) {
-            calibTitle.text = "Calibration Complete!"
-            val gesture1Text = GestureType.values()[gestureSelection1].str
-            val gesture2Text = GestureType.values()[gestureSelection2].str
-            val gesture3Text = GestureType.values()[gestureSelection3].str
-            calibDescription.text = "Recommended gestures and accuracy: \n  " + gesture1Text + " (set to Task 1) %.2f \n  ".format(gesture1Accuracy*100) + gesture2Text + " (set to Task 2) %.2f \n  ".format(gesture2Accuracy*100) + gesture3Text + " (set to Task 3) %.2f ".format(gesture3Accuracy*100) + "\nClick UI button to start using Macro Snap!"
-            calibImage.setImageResource(android.R.color.transparent)
-        }
-        else {
             val imageId = resources.getIdentifier(calibImageDrawables[status-1], "drawable", activity?.packageName)
             calibImage.setImageResource(imageId)
             calibDescription.text = calibDescriptionText[status-1]
         }
-
-        if (status in 2..6) {
+        else if (status < 7) {
+            val gestureText = GestureType.values()[status-1].str
+            calibTitle.text = "Gesture Calibration: $gestureText"
+            val imageId = resources.getIdentifier(calibImageDrawables[status-1], "drawable", activity?.packageName)
+            calibImage.setImageResource(imageId)
+            calibDescription.text = calibDescriptionText[status-1]
             progressBar.visibility = View.VISIBLE
             progressText.visibility = View.VISIBLE
             progressText.text = "$currGestureCount/5"
@@ -682,9 +669,13 @@ class ScannerFragment : Fragment() {
                 progressBar.incrementProgressBy(20)
             }
         }
-        else {
-            progressBar.visibility = View.GONE
-            progressText.visibility = View.GONE
+        else if (status == 7) {
+            calibTitle.text = "Calibration Complete!"
+            val gesture1Text = GestureType.values()[gestureSelection1].str
+            val gesture2Text = GestureType.values()[gestureSelection2].str
+            val gesture3Text = GestureType.values()[gestureSelection3].str
+            calibDescription.text = "Recommended gestures and accuracy: \n  " + gesture1Text + " (set to Task 1) %.2f \n  ".format(gesture1Accuracy*100) + gesture2Text + " (set to Task 2) %.2f \n  ".format(gesture2Accuracy*100) + gesture3Text + " (set to Task 3) %.2f ".format(gesture3Accuracy*100) + "\nClick UI button to start using Macro Snap!"
+            calibImage.setImageResource(android.R.color.transparent)
         }
     }
 
@@ -756,6 +747,11 @@ class ScannerFragment : Fragment() {
                     )
                     debugTextView.text = "$deviceName: vbat $battery, fsrs [$fsr1, $fsr2, $fsr3], calib $calib, status $status, connected $connected, gesture $gesture"
 
+                    // battery low
+                    if (battery > 60) {
+                        Toast.makeText(activity, "Wearable battery low!", Toast.LENGTH_SHORT).show()
+                    }
+
                     updateGraph(fsr1, fsr2, fsr3)
 
                     // only store raw FSR values if
@@ -769,7 +765,12 @@ class ScannerFragment : Fragment() {
                         fsr2Data.add(dataIndex, normFsr2)
                         fsr3Data.add(dataIndex, normFsr3)
                         dataIndex += 1
-                        debugTextView.text = "Recording gesture.. FSR1 %.3f FSR2 %.3f FSR3 %.3f".format(normFsr1, normFsr2, normFsr3)
+                        if (needRestValue) {
+                            debugTextView.text = "Maintain resting position.. FSR1 %.3f FSR2 %.3f FSR3 %.3f".format(normFsr1, normFsr2, normFsr3)
+                        }
+                        else {
+                            debugTextView.text = "Recording gesture.. FSR1 %.3f FSR2 %.3f FSR3 %.3f".format(normFsr1, normFsr2, normFsr3)
+                        }
                         Log.e("MACROSNAP", "Stored data FSR1 %.4f FSR2 %.4f FSR3 %.4f".format(normFsr1, normFsr2, normFsr3))
                     }
 
@@ -784,48 +785,87 @@ class ScannerFragment : Fragment() {
                         emptyData()
                     }
 
-                    /*
                     // run prediction
-                    if (prevGestureStatus == 1 && gesture == 0 && status == 0) {
-                        val fsrFeatures = preprocessData()
-                        Log.e("MACROSNAP", "Processed features " + fsrFeatures.joinToString())
-                        // run svm
-                        val pred = model!!.predict(fsrFeatures)  // type int
-                        val gesture = GestureType.values()[pred]
-                        Log.e("MACROSNAP", "Predicted gesture " + gesture.str)
-                        // run task
-                        runAppIntent(pred)
+                    if (prevGestureStatus == 1 && gesture == 0 && status == 8) {
+                        val (success, fsrFeatures) = preprocessData()
+                        if (success) {
+                            Log.e("MACROSNAP", "Processed features " + fsrFeatures.joinToString())
+                            // run svm
+                            val pred = model!!.predict(fsrFeatures) + 1 // type int
+                            val detectedGesture = GestureType.values()[pred]
+                            Log.e("MACROSNAP", "Predicted gesture " + detectedGesture.str)
+                            Toast.makeText(activity, "Predicted gesture" + detectedGesture.str, Toast.LENGTH_SHORT).show()
+                            // run task
+                            runAppIntent(pred)
+                        } else {
+                            Log.e("MACROSNAP", "Processed features failed")
+                        }
                         // reset list
                         emptyData()
                     }
-                    */
+
+                    // store snap
+                    if (status == 1) {
+                        snapWaveForm1.add(fsr1)
+                        snapWaveForm2.add(fsr2)
+                        snapWaveForm3.add(fsr3)
+                    }
+
+                    if (prevCalibStatus == 1 && status == 2) {
+                        Log.e("MACROSNAP", "Snap waves length " + snapWaveForm1.size.toString())
+                        Log.e("MACROSNAP", "Snap waves " + snapWaveForm1.joinToString(" "))
+                        Log.e("MACROSNAP", "Snap waves " + snapWaveForm2.joinToString(" "))
+                        Log.e("MACROSNAP", "Snap waves " + snapWaveForm3.joinToString(" "))
+                        val dataPoints = mutableListOf<DataPoint>()
+                        for (i in snapWaveForm1.indices) {
+                            dataPoints.add(DataPoint(i, snapWaveForm1[i]))
+                        }
+                        snapGraph1.setData(dataPoints.toList(), snapWaveForm1.size, 255)
+                        dataPoints.clear()
+                        for (i in snapWaveForm2.indices) {
+                            dataPoints.add(DataPoint(i, snapWaveForm2[i]))
+                        }
+                        snapGraph2.setData(dataPoints.toList(), snapWaveForm2.size, 255)
+                        dataPoints.clear()
+                        for (i in snapWaveForm3.indices) {
+                            dataPoints.add(DataPoint(i, snapWaveForm3[i]))
+                        }
+                        snapGraph3.setData(dataPoints.toList(), snapWaveForm3.size, 255)
+                        dataPoints.clear()
+                        snapWaveForm1.clear()
+                        snapWaveForm2.clear()
+                        snapWaveForm3.clear()
+                    }
+
                     // run gesture calibration
-                    if (prevGestureStatus == 1 && gesture == 0 && status >= 2) {
+                    if (prevGestureStatus == 1 && gesture == 0 && status >= 2 && status < 8) {
                         Log.e("MACROSNAP", "Amount data stored " + (dataIndex+1).toString())
                         Log.e("MACROSNAP", "fsr1Data " + fsr1Data.joinToString(" "))
                         Log.e("MACROSNAP", "fsr2Data " + fsr2Data.joinToString(" "))
                         Log.e("MACROSNAP", "fsr3Data " + fsr3Data.joinToString(" "))
-                        val fsrFeatures = preprocessData()
-                        Log.e("MACROSNAP", "Processed features " + fsrFeatures.joinToString())
-                        val label = status - 1
-                        datasetX.add(datasetIndex, fsrFeatures)
-                        datasetY.add(datasetIndex, label)
-                        datasetIndex += 1
-                        currGestureCount += 1
-                        Log.e("MACROSNAP", "Label $label gestures recorded $currGestureCount")
+                        val (success, fsrFeatures) = preprocessData()
+                        if (success) {
+                            Log.e("MACROSNAP", "Processed features " + fsrFeatures.joinToString())
+                            val label = status - 2
+                            datasetX.add(fsrFeatures)
+                            datasetY.add(label)
+                            currGestureCount += 1
+                            Log.e("MACROSNAP", "Label $label gestures recorded $currGestureCount")
+                        }
+                        else {
+                            Log.e("MACROSNAP", "Processed features failed")
+                        }
                         // reset list
                         emptyData()
                     }
 
-
-                    if (prevGestureStatus == 1 && gesture == 0 && status == 6 && currGestureCount == 1) {
-                        // calibration data collection completed
-                        Log.e("MACROSNAP", "SVM training dataset size " + (datasetIndex+1).toString())
+                    // calibration data collection completed
+                    if (prevCalibStatus == 6 && status == 7) {
                         trainSVM(datasetX.toTypedArray(), datasetY.toIntArray())
                     }
 
                     // update UI
-                    if (status <= 7) {
+                    if (status <= 8) {
                         updateUI(status)
                     }
 

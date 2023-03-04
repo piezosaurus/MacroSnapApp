@@ -36,11 +36,11 @@ class GraphView(context: Context, attributeSet: AttributeSet) : View(context, at
         strokeWidth = 0f
     }
 
-    fun setData(newDataSet: List<DataPoint>) {
+    fun setData(newDataSet: List<DataPoint>, xMaxIn: Int, yMaxIn: Int) {
         xMin = 0
-        xMax = 255
+        xMax = xMaxIn
         yMin = 0
-        yMax = 10
+        yMax = yMaxIn
         dataSet.clear()
         dataSet.addAll(newDataSet)
         invalidate()
