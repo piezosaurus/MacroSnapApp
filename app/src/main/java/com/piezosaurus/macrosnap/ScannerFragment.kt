@@ -43,6 +43,7 @@ enum class GestureType(val str: String) {
 }
 
 class ScannerFragment : Fragment() {
+    private lateinit var spinnerDevice: Spinner
     private lateinit var startButton: Button
     private lateinit var stopButton: Button
     private lateinit var viewSwitcher: ViewSwitcher
@@ -71,11 +72,13 @@ class ScannerFragment : Fragment() {
     private lateinit var progressBar: ProgressBar
     private lateinit var calibDescription: TextView
     private lateinit var calibImage: ImageView
-    // delete later
-    private lateinit var snapGraph1: GraphView
-    private lateinit var snapGraph2: GraphView
-    private lateinit var snapGraph3: GraphView
 
+    private var prevCalib: Int = 8
+    private var calibImageDrawables = arrayOf<String>()
+    private var calibDescriptionText = arrayOf<String>()
+
+    // BLE
+    private var bleDeviceSelection = 0
     private var btManager: BluetoothManager? = null
     private var btAdapter: BluetoothAdapter? = null
     private var btScanner: BluetoothLeScanner? = null
@@ -91,14 +94,6 @@ class ScannerFragment : Fragment() {
     private var gestureSelection3: Int = 0
     private var playlistLink: String = ""
     private var gestureSelection4: Int = 0
-
-    // Calibration
-    private var prevCalib: Int = 8
-    private var calibImageDrawables = arrayOf<String>()
-    private var calibDescriptionText = arrayOf<String>()
-    private var snapWaveForm1 = mutableListOf<Int>()
-    private var snapWaveForm2 = mutableListOf<Int>()
-    private var snapWaveForm3 = mutableListOf<Int>()
 
     // FSR raw values (range 0 to 255)
     // 0 is no force, 255 is high force
@@ -150,6 +145,29 @@ class ScannerFragment : Fragment() {
     }
 
     private fun initViews(view: View) {
+        spinnerDevice = view.findViewById(R.id.spinnerDevice)
+        spinnerDevice.onItemSelectedListener = (object : OnItemSelectedListener {
+            override fun onItemSelected(parent: AdapterView<*>?, view: View?, position: Int, id: Long) {
+                bleDeviceSelection = position
+                restartScanner()
+                Log.e("MACROSNAP","BLE device changed $bleDeviceSelection")
+            }
+            override fun onNothingSelected(parent: AdapterView<*>?) {
+                bleDeviceSelection = 0
+            }
+        })
+        activity?.let {
+            ArrayAdapter.createFromResource(
+                it,
+                R.array.armband_names,
+                android.R.layout.simple_spinner_item
+            ).also { adapter ->
+                // Specify the layout to use when the list of choices appears
+                adapter.setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item)
+                // Apply the adapter to the spinner
+                spinnerDevice.adapter = adapter
+            }
+        }
         graph1 = view.findViewById(R.id.graph1)
         graph2 = view.findViewById(R.id.graph2)
         graph3 = view.findViewById(R.id.graph3)
@@ -285,16 +303,13 @@ class ScannerFragment : Fragment() {
         calibImage = view.findViewById(R.id.calib_image)
         calibImageDrawables = resources.getStringArray(R.array.calib_images)
         calibDescriptionText = resources.getStringArray(R.array.calib_descriptions)
-        // delete later
-        snapGraph1 = view.findViewById(R.id.snap_graph1)
-        snapGraph2 = view.findViewById(R.id.snap_graph2)
-        snapGraph3 = view.findViewById(R.id.snap_graph3)
     }
 
     private fun onStartScannerButtonClick() {
         startButton.visibility = View.GONE
         stopButton.visibility = View.VISIBLE
-        val names = arrayOf("Grizz")  // arrayOf("Panda", "Grizz", "Ice Bear")
+        val deviceName = resources.getStringArray(R.array.armband_names)[bleDeviceSelection]
+        val names = arrayOf(deviceName)
         val filters: MutableList<ScanFilter> = ArrayList()
         for (name in names) {
             val filter = ScanFilter.Builder()
@@ -803,39 +818,6 @@ class ScannerFragment : Fragment() {
                         }
                         // reset list
                         emptyData()
-                    }
-
-                    // store snap
-                    if (status == 1) {
-                        snapWaveForm1.add(fsr1)
-                        snapWaveForm2.add(fsr2)
-                        snapWaveForm3.add(fsr3)
-                    }
-
-                    if (prevCalibStatus == 1 && status == 2) {
-                        Log.e("MACROSNAP", "Snap waves length " + snapWaveForm1.size.toString())
-                        Log.e("MACROSNAP", "Snap waves " + snapWaveForm1.joinToString(" "))
-                        Log.e("MACROSNAP", "Snap waves " + snapWaveForm2.joinToString(" "))
-                        Log.e("MACROSNAP", "Snap waves " + snapWaveForm3.joinToString(" "))
-                        val dataPoints = mutableListOf<DataPoint>()
-                        for (i in snapWaveForm1.indices) {
-                            dataPoints.add(DataPoint(i, snapWaveForm1[i]))
-                        }
-                        snapGraph1.setData(dataPoints.toList(), snapWaveForm1.size, 255)
-                        dataPoints.clear()
-                        for (i in snapWaveForm2.indices) {
-                            dataPoints.add(DataPoint(i, snapWaveForm2[i]))
-                        }
-                        snapGraph2.setData(dataPoints.toList(), snapWaveForm2.size, 255)
-                        dataPoints.clear()
-                        for (i in snapWaveForm3.indices) {
-                            dataPoints.add(DataPoint(i, snapWaveForm3[i]))
-                        }
-                        snapGraph3.setData(dataPoints.toList(), snapWaveForm3.size, 255)
-                        dataPoints.clear()
-                        snapWaveForm1.clear()
-                        snapWaveForm2.clear()
-                        snapWaveForm3.clear()
                     }
 
                     if (gesture == 2) {

@@ -1,5 +1,10 @@
 <resources>
     <string name="app_name">Macro Snap</string>
+    <string-array name="armband_names">
+        <item>Grizz</item>
+        <item>Panda</item>
+        <item>Ice Bear</item>
+    </string-array>
     <string-array name="gesture_types">
         <item>None</item>
         <item>Fist</item>
