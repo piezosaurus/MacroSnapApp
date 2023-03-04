@@ -199,7 +199,7 @@
                         android:layout_height="wrap_content"
                         android:layout_gravity="center"
                         android:textSize="30sp"
-                        android:text="00:00:05" />
+                        android:text="00:00:00" />
 
                     <com.piezosaurus.macrosnap.MyTimePicker
                         android:id="@+id/timerTimePicker"
