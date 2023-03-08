@@ -105,6 +105,7 @@ class ScannerFragment : Fragment() {
     private val fsr2Data = mutableListOf<Double>()
     private val fsr3Data = mutableListOf<Double>()
     private var prevGestureStatus: Int = 0
+    private var cancelGesture: Boolean = false
 
     // Store training data
     private val datasetX = mutableListOf<DoubleArray>()
@@ -544,7 +545,7 @@ class ScannerFragment : Fragment() {
         Log.e("MACROSNAP", "fsr2Filtered " + fsr2Filtered.joinToString(" "))
         Log.e("MACROSNAP", "fsr3Filtered " + fsr3Filtered.joinToString(" "))
         return if (fsr1Filtered.size < 5) {
-            Toast.makeText(activity, "Gesture data too short, hold for longer!", Toast.LENGTH_SHORT).show()
+            Toast.makeText(activity, "Gesture data too short, hold for longer or bring device closer!", Toast.LENGTH_SHORT).show()
             Pair(false, doubleArrayOf())
         } else {
             // calculate mean
@@ -744,28 +745,19 @@ class ScannerFragment : Fragment() {
                 val serviceData = scanRecord.serviceData.values
                 val scanData = serviceData.elementAtOrNull(0)
                 if (scanData != null) {
-                    var battery = scanData[0].toUByte().toUInt().toInt()
-                    var fsr1 = scanData[1].toUByte().toUInt().toInt()
-                    var fsr2 = scanData[2].toUByte().toUInt().toInt()
-                    var fsr3 = scanData[3].toUByte().toUInt().toInt()
-                    var calib = scanData[4].toUByte().toUInt().toInt()
-                    var status = scanData[5].toUByte().toUInt().toInt()
-                    var connected = scanData[6].toUByte().toUInt().toInt()
-                    var gesture = scanData[7].toUByte().toUInt().toInt()
-//                    if (fsr1 == 255) {
-//                        fsr1 = 0
-//                    }
-//                    if (fsr2 == 255) {
-//                        fsr2 = 0
-//                    }
-//                    if (fsr3 == 255) {
-//                        fsr3 = 0
-//                    }
+                    val battery = scanData[0].toUByte().toUInt().toInt()
+                    val fsr1 = scanData[1].toUByte().toUInt().toInt()
+                    val fsr2 = scanData[2].toUByte().toUInt().toInt()
+                    val fsr3 = scanData[3].toUByte().toUInt().toInt()
+                    val button = scanData[4].toUByte().toUInt().toInt()
+                    val status = scanData[5].toUByte().toUInt().toInt()
+                    val connected = scanData[6].toUByte().toUInt().toInt()
+                    val gesture = scanData[7].toUByte().toUInt().toInt()
                     Log.i(
                         "MACROSNAP",
-                        "device $deviceName, vbat $battery, fsrs [$fsr1, $fsr2, $fsr3], calib $calib, status $status, connected $connected, gesture $gesture"
+                        "device $deviceName, vbat $battery, fsrs [$fsr1, $fsr2, $fsr3], button $button, status $status, connected $connected, gesture $gesture"
                     )
-                    debugTextView.text = "$deviceName: vbat $battery, fsrs [$fsr1, $fsr2, $fsr3], calib $calib, status $status, connected $connected, gesture $gesture"
+                    debugTextView.text = "$deviceName: vbat $battery, fsrs [$fsr1, $fsr2, $fsr3], button $button, status $status, connected $connected, gesture $gesture"
 
                     // battery low
                     if (battery > 60) {
@@ -805,21 +797,29 @@ class ScannerFragment : Fragment() {
                         emptyData()
                     }
 
+                    if (button == 1 && status == 9) {
+                        cancelGesture = true
+                    }
+
                     // run prediction
                     if (prevGestureStatus == 1 && gesture == 0 && status == 8) {
-                        val (success, fsrFeatures) = preprocessData()
-                        if (success) {
-//                            Toast.makeText(activity, "Calculated features "+ fsrFeatures.joinToString(), Toast.LENGTH_SHORT).show()
-                            Log.e("MACROSNAP", "Processed features " + fsrFeatures.joinToString())
-                            // run model
-                            val pred = knn!!.predict(fsrFeatures) + 1 // type int
-                            val detectedGesture = GestureType.values()[pred]
-                            Log.e("MACROSNAP", "Predicted gesture " + detectedGesture.str)
-                            Toast.makeText(activity, "Predicted gesture " + detectedGesture.str, Toast.LENGTH_SHORT).show()
-                            // run task
-                            runAppIntent(pred)
+                        if (cancelGesture) {
+                            Toast.makeText(activity, "Gesture cancelled", Toast.LENGTH_SHORT).show()
                         } else {
-                            Log.e("MACROSNAP", "Processed features failed")
+                            val (success, fsrFeatures) = preprocessData()
+                            if (success) {
+//                            Toast.makeText(activity, "Calculated features "+ fsrFeatures.joinToString(), Toast.LENGTH_SHORT).show()
+                                Log.e("MACROSNAP", "Processed features " + fsrFeatures.joinToString())
+                                // run model
+                                val pred = knn!!.predict(fsrFeatures) + 1 // type int
+                                val detectedGesture = GestureType.values()[pred]
+                                Log.e("MACROSNAP", "Predicted gesture " + detectedGesture.str)
+                                Toast.makeText(activity, "Predicted gesture " + detectedGesture.str, Toast.LENGTH_SHORT).show()
+                                // run task
+                                runAppIntent(pred)
+                            } else {
+                                Log.e("MACROSNAP", "Processed features failed")
+                            }
                         }
                         // reset list
                         emptyData()
@@ -868,6 +868,9 @@ class ScannerFragment : Fragment() {
 
                     if (prevCalibStatus != status) {
                         currGestureCount = 0
+                    }
+                    if (prevGestureStatus != gesture) {
+                        cancelGesture = false
                     }
                     prevCalibStatus = status
                     prevGestureStatus = gesture
