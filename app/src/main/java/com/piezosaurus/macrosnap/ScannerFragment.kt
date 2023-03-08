@@ -90,7 +90,7 @@ class ScannerFragment : Fragment() {
     private var gestureSelection2: Int = 0
     private var timerHour: Int = 0
     private var timerMinute: Int = 0
-    private var timerSecond: Int = 0
+    private var timerSecond: Int = 30
     private var gestureSelection3: Int = 0
     private var playlistLink: String = ""
     private var gestureSelection4: Int = 0
@@ -602,6 +602,11 @@ class ScannerFragment : Fragment() {
     }
 
     private fun trainKNN(x: Array<DoubleArray>, y: IntArray) {
+        // check dataset size
+        if (x.size < 1) {
+            Toast.makeText(activity, "Not enough data to train KNN, restart the band to start calibration again.", Toast.LENGTH_LONG).show()
+            return
+        }
         // save dataset
         Log.e("MACROSNAP", "KNN training dataset size " + y.size.toString())
         val xFile = File(this.context?.filesDir,"x.txt")
