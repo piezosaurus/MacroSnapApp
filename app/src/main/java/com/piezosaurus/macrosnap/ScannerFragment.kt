@@ -31,6 +31,7 @@ import smile.math.kernel.*
 import smile.validation.*
 import smile.validation.metric.ConfusionMatrix
 import java.io.*
+import java.text.SimpleDateFormat
 import java.util.*
 import kotlin.math.abs
 import kotlin.random.Random
@@ -83,6 +84,12 @@ class ScannerFragment : Fragment() {
     private lateinit var phoneText: TextView
     private lateinit var phoneEditText: EditText
     private lateinit var phoneButton: Button
+    private lateinit var spinner8: Spinner
+    private lateinit var noteMsgText: TextView
+    private lateinit var noteEditText: EditText
+    private lateinit var noteButton: Button
+    private lateinit var noteText: TextView
+    private lateinit var clearNoteButton: Button
 
     // Calibration
     private lateinit var calibTitle: TextView
@@ -120,6 +127,8 @@ class ScannerFragment : Fragment() {
     private var websiteUrl: String = ""
     private var gestureSelection7: Int = 0
     private var phoneNumber: String = ""
+    private var gestureSelection8: Int = 0
+    private var noteMsg: String = ""
 
     // FSR raw values (range 0 to 255)
     // 0 is no force, 255 is high force
@@ -295,7 +304,7 @@ class ScannerFragment : Fragment() {
         playlistLinkText = view.findViewById(R.id.link_text)
         playlistLinkEditText = view.findViewById(R.id.linkEditText)
         playlistLinkButton = view.findViewById(R.id.linkButton)
-        playlistLinkButton.setOnClickListener { onplaylistLinkButtonClick() }
+        playlistLinkButton.setOnClickListener { onPlaylistLinkButtonClick() }
         playlistLink = playlistLinkText.text.toString()
         // Task 4
         spinner4 = view.findViewById(R.id.spinner4)
@@ -417,6 +426,37 @@ class ScannerFragment : Fragment() {
         phoneButton = view.findViewById(R.id.phoneButton)
         phoneButton.setOnClickListener { onPhoneButtonClick() }
         phoneNumber = phoneText.text.toString()
+        // Task 8
+        spinner8 = view.findViewById(R.id.spinner8)
+        spinner8.onItemSelectedListener = (object : OnItemSelectedListener {
+            override fun onItemSelected(parent: AdapterView<*>?, view: View?, position: Int, id: Long) {
+                gestureSelection8 = position
+                Log.e("MACROSNAP","Task 8 gesture $gestureSelection8")
+            }
+            override fun onNothingSelected(parent: AdapterView<*>?) {
+                gestureSelection8 = 0
+            }
+        })
+        activity?.let {
+            ArrayAdapter.createFromResource(
+                it,
+                R.array.gesture_types,
+                android.R.layout.simple_spinner_item
+            ).also { adapter ->
+                // Specify the layout to use when the list of choices appears
+                adapter.setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item)
+                // Apply the adapter to the spinner
+                spinner8.adapter = adapter
+            }
+        }
+        noteMsgText = view.findViewById(R.id.noteMsg)
+        noteEditText = view.findViewById(R.id.noteEditText)
+        noteText = view.findViewById(R.id.notes)
+        noteButton = view.findViewById(R.id.noteButton)
+        noteButton.setOnClickListener { onNoteButtonClick() }
+        clearNoteButton= view.findViewById(R.id.clearNoteButton)
+        clearNoteButton.setOnClickListener { onClearNoteButtonClick() }
+        noteMsg = noteMsgText.text.toString()
         // Calibration
         calibTitle = view.findViewById(R.id.calib_title)
         progressText = view.findViewById(R.id.gesture_progress)
@@ -505,7 +545,7 @@ class ScannerFragment : Fragment() {
         }
     }
 
-    private fun onplaylistLinkButtonClick() {
+    private fun onPlaylistLinkButtonClick() {
         if (playlistLinkEditText.visibility == View.GONE) {
             playlistLinkText.visibility = View.GONE
             playlistLinkEditText.visibility = View.VISIBLE
@@ -629,6 +669,35 @@ class ScannerFragment : Fragment() {
             phoneEditText.visibility = View.GONE
             phoneButton.setText("Change number")
         }
+    }
+
+    private fun onNoteButtonClick() {
+        if (noteEditText.visibility == View.GONE) {
+            noteMsgText.visibility = View.GONE
+            noteEditText.visibility = View.VISIBLE
+            noteButton.setText("Save note")
+        }
+        else {
+            if (noteEditText.text.isNotEmpty()) {
+                noteMsgText.text = noteEditText.text.toString()
+                noteMsg = noteEditText.text.toString()
+            }
+            else {
+                noteMsg = noteMsgText.text.toString()
+            }
+            val imm: InputMethodManager =
+                this.context?.getSystemService(Context.INPUT_METHOD_SERVICE) as InputMethodManager
+            imm.hideSoftInputFromWindow(view?.windowToken, 0)
+            noteMsgText.visibility = View.VISIBLE
+            noteEditText.visibility = View.GONE
+            noteButton.setText("Change note")
+        }
+    }
+
+    private fun onClearNoteButtonClick() {
+        noteText.text = ""
+        noteText.visibility = View.GONE
+        clearNoteButton.visibility = View.GONE
     }
 
     private fun setUpBluetoothManager() {
@@ -972,6 +1041,17 @@ class ScannerFragment : Fragment() {
             }
             gestureSelection7 -> {
                 tasks?.call(phoneNumber)
+                return
+            }
+            gestureSelection8 -> {
+                val time = Calendar.getInstance().time
+                val formatter = SimpleDateFormat("yyyy-MM-dd HH:mm")
+                val newNote = formatter.format(time) + ": " + noteMsg + "\n"
+                noteText.text = noteText.text.toString() + newNote
+                if (noteText.visibility == View.GONE) {
+                    noteText.visibility = View.VISIBLE
+                    clearNoteButton.visibility = View.VISIBLE
+                }
                 return
             }
         }
