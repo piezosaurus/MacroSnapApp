@@ -79,6 +79,10 @@ class ScannerFragment : Fragment() {
     private lateinit var websiteText: TextView
     private lateinit var websiteEditText: EditText
     private lateinit var websiteButton: Button
+    private lateinit var spinner7: Spinner
+    private lateinit var phoneText: TextView
+    private lateinit var phoneEditText: EditText
+    private lateinit var phoneButton: Button
 
     // Calibration
     private lateinit var calibTitle: TextView
@@ -114,6 +118,8 @@ class ScannerFragment : Fragment() {
     private var mediaRecorder: MediaRecorder? = null
     private var gestureSelection6: Int = 0
     private var websiteUrl: String = ""
+    private var gestureSelection7: Int = 0
+    private var phoneNumber: String = ""
 
     // FSR raw values (range 0 to 255)
     // 0 is no force, 255 is high force
@@ -148,7 +154,7 @@ class ScannerFragment : Fragment() {
     ): View? {
         val view = inflater.inflate(R.layout.fragment_scanner, container, false)
         initViews(view)
-        tasks = Tasks(context!!)
+        tasks = Tasks(context!!, activity!!)
         setUpBluetoothManager()
         loadModel()
         // max continuous scan time is 30 min
@@ -383,6 +389,34 @@ class ScannerFragment : Fragment() {
         websiteButton = view.findViewById(R.id.websiteButton)
         websiteButton.setOnClickListener { onWebsiteButtonClick() }
         websiteUrl = websiteText.text.toString()
+        // Task 7
+        spinner7 = view.findViewById(R.id.spinner7)
+        spinner7.onItemSelectedListener = (object : OnItemSelectedListener {
+            override fun onItemSelected(parent: AdapterView<*>?, view: View?, position: Int, id: Long) {
+                gestureSelection7 = position
+                Log.e("MACROSNAP","Task 7 gesture $gestureSelection7")
+            }
+            override fun onNothingSelected(parent: AdapterView<*>?) {
+                gestureSelection7 = 0
+            }
+        })
+        activity?.let {
+            ArrayAdapter.createFromResource(
+                it,
+                R.array.gesture_types,
+                android.R.layout.simple_spinner_item
+            ).also { adapter ->
+                // Specify the layout to use when the list of choices appears
+                adapter.setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item)
+                // Apply the adapter to the spinner
+                spinner7.adapter = adapter
+            }
+        }
+        phoneText = view.findViewById(R.id.phone_number_text)
+        phoneEditText = view.findViewById(R.id.phoneEditText)
+        phoneButton = view.findViewById(R.id.phoneButton)
+        phoneButton.setOnClickListener { onPhoneButtonClick() }
+        phoneNumber = phoneText.text.toString()
         // Calibration
         calibTitle = view.findViewById(R.id.calib_title)
         progressText = view.findViewById(R.id.gesture_progress)
@@ -571,6 +605,29 @@ class ScannerFragment : Fragment() {
             websiteText.visibility = View.VISIBLE
             websiteEditText.visibility = View.GONE
             websiteButton.setText("Change website")
+        }
+    }
+
+    private fun onPhoneButtonClick() {
+        if (phoneEditText.visibility == View.GONE) {
+            phoneText.visibility = View.GONE
+            phoneEditText.visibility = View.VISIBLE
+            phoneButton.setText("Save number")
+        }
+        else {
+            if (phoneEditText.text.isNotEmpty()) {
+                phoneText.text = phoneEditText.text.toString()
+                phoneNumber = phoneEditText.text.toString()
+            }
+            else {
+                phoneNumber = phoneText.text.toString()
+            }
+            val imm: InputMethodManager =
+                this.context?.getSystemService(Context.INPUT_METHOD_SERVICE) as InputMethodManager
+            imm.hideSoftInputFromWindow(view?.windowToken, 0)
+            phoneText.visibility = View.VISIBLE
+            phoneEditText.visibility = View.GONE
+            phoneButton.setText("Change number")
         }
     }
 
@@ -911,6 +968,10 @@ class ScannerFragment : Fragment() {
             }
             gestureSelection6 -> {
                 tasks?.website(websiteUrl)
+                return
+            }
+            gestureSelection7 -> {
+                tasks?.call(phoneNumber)
                 return
             }
         }
