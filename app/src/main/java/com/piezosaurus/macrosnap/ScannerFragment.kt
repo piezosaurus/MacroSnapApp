@@ -18,6 +18,7 @@ import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
 import android.view.inputmethod.InputMethodManager
+import android.webkit.URLUtil
 import android.widget.*
 import android.widget.AdapterView.OnItemSelectedListener
 import androidx.fragment.app.Fragment
@@ -551,8 +552,15 @@ class ScannerFragment : Fragment() {
         }
         else {
             if (websiteEditText.text.isNotEmpty()) {
-                websiteText.text = websiteEditText.text.toString()
-                websiteUrl = websiteEditText.text.toString()
+                val url = websiteEditText.text.toString()
+                if (URLUtil.isValidUrl(url)) {
+                    websiteText.text = websiteEditText.text.toString()
+                    websiteUrl = websiteEditText.text.toString()
+                }
+                else {
+                    Toast.makeText(activity, "Invalid website url! Include https://", Toast.LENGTH_SHORT).show()
+                    websiteUrl = websiteText.text.toString()
+                }
             }
             else {
                 websiteUrl = websiteText.text.toString()
