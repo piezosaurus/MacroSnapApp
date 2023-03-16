@@ -9,7 +9,10 @@ import android.content.ComponentName
 import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
+import android.media.MediaPlayer
+import android.media.MediaRecorder
 import android.os.Bundle
+import android.os.Environment
 import android.util.Log
 import android.view.LayoutInflater
 import android.view.View
@@ -18,6 +21,7 @@ import android.view.inputmethod.InputMethodManager
 import android.widget.*
 import android.widget.AdapterView.OnItemSelectedListener
 import androidx.fragment.app.Fragment
+import kotlinx.android.synthetic.main.fragment_scanner.*
 import smile.*
 import smile.classification.*
 import smile.data.*
@@ -43,6 +47,10 @@ enum class GestureType(val str: String) {
 }
 
 class ScannerFragment : Fragment() {
+    private lateinit var debugTextView: TextView
+    private lateinit var graph1: GraphView
+    private lateinit var graph2: GraphView
+    private lateinit var graph3: GraphView
     private lateinit var spinnerDevice: Spinner
     private lateinit var startButton: Button
     private lateinit var stopButton: Button
@@ -61,10 +69,11 @@ class ScannerFragment : Fragment() {
     private lateinit var playlistLinkButton: Button
     private lateinit var spinner4: Spinner
     private lateinit var spotifyButton: Button
-    private lateinit var debugTextView: TextView
-    private lateinit var graph1: GraphView
-    private lateinit var graph2: GraphView
-    private lateinit var graph3: GraphView
+    private lateinit var spinner5: Spinner
+    private lateinit var startRecordButton: Button
+    private lateinit var stopRecordButton: Button
+    private lateinit var playRecordButton: Button
+    private lateinit var stopPlayRecordButton: Button
 
     // Calibration
     private lateinit var calibTitle: TextView
@@ -94,6 +103,10 @@ class ScannerFragment : Fragment() {
     private var gestureSelection3: Int = 0
     private var playlistLink: String = ""
     private var gestureSelection4: Int = 0
+    private var gestureSelection5: Int = 0
+    private var saveAudioPath: String = ""
+    private var mediaPlayer: MediaPlayer? = null
+    private var mediaRecorder: MediaRecorder? = null
 
     // FSR raw values (range 0 to 255)
     // 0 is no force, 255 is high force
@@ -296,6 +309,45 @@ class ScannerFragment : Fragment() {
         }
         spotifyButton = view.findViewById(R.id.spotifyButton)
         spotifyButton.setOnClickListener { onSpotifyButtonClick() }
+        // Task 5
+        spinner5 = view.findViewById(R.id.spinner5)
+        spinner5.onItemSelectedListener = (object : OnItemSelectedListener {
+            override fun onItemSelected(parent: AdapterView<*>?, view: View?, position: Int, id: Long) {
+                gestureSelection5 = position
+                Log.e("MACROSNAP","Task 5 gesture $gestureSelection5")
+            }
+            override fun onNothingSelected(parent: AdapterView<*>?) {
+                gestureSelection5 = 0
+            }
+        })
+        activity?.let {
+            ArrayAdapter.createFromResource(
+                it,
+                R.array.gesture_types,
+                android.R.layout.simple_spinner_item
+            ).also { adapter ->
+                // Specify the layout to use when the list of choices appears
+                adapter.setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item)
+                // Apply the adapter to the spinner
+                spinner5.adapter = adapter
+            }
+        }
+        startRecordButton = view.findViewById(R.id.startRecordButton)
+        stopRecordButton = view.findViewById(R.id.stopRecordButton)
+        playRecordButton = view.findViewById(R.id.playRecordButton)
+        stopPlayRecordButton = view.findViewById(R.id.stopPlayRecordButton)
+        startRecordButton.setOnClickListener {
+            if (activity!!.checkSelfPermission(Manifest.permission.RECORD_AUDIO) != PackageManager.PERMISSION_GRANTED
+                && activity!!.checkSelfPermission(Manifest.permission.WRITE_EXTERNAL_STORAGE) != PackageManager.PERMISSION_GRANTED) {
+                val permissions = arrayOf(Manifest.permission.RECORD_AUDIO, Manifest.permission.WRITE_EXTERNAL_STORAGE, Manifest.permission.READ_EXTERNAL_STORAGE)
+                activity!!.requestPermissions(permissions, 0)
+            } else {
+                startRecording()
+            }
+        }
+        stopRecordButton.setOnClickListener{ stopRecording() }
+        playRecordButton.setOnClickListener { playRecording() }
+        stopPlayRecordButton.setOnClickListener{ stopPlayRecording() }
         // Calibration
         calibTitle = view.findViewById(R.id.calib_title)
         progressText = view.findViewById(R.id.gesture_progress)
@@ -405,6 +457,56 @@ class ScannerFragment : Fragment() {
             playlistLinkEditText.visibility = View.GONE
             playlistLinkButton.setText("Change playlist")
         }
+    }
+
+    private fun startRecording() {
+        try {
+            mediaRecorder = MediaRecorder()
+            saveAudioPath = Environment.getExternalStorageDirectory().absolutePath + "/recording.mp3"
+            mediaRecorder?.setAudioSource(MediaRecorder.AudioSource.MIC)
+            mediaRecorder?.setOutputFormat(MediaRecorder.OutputFormat.MPEG_4)
+            mediaRecorder?.setAudioEncoder(MediaRecorder.AudioEncoder.AAC)
+            mediaRecorder?.setOutputFile(saveAudioPath)
+            mediaRecorder?.prepare()
+            mediaRecorder?.start()
+            Toast.makeText(activity, "Recording started!", Toast.LENGTH_SHORT).show()
+            startRecordButton.visibility = View.GONE
+            stopRecordButton.visibility = View.VISIBLE
+        } catch (e: IllegalStateException) {
+            e.printStackTrace()
+        } catch (e: IOException) {
+            e.printStackTrace()
+        }
+    }
+
+    private fun stopRecording() {
+        mediaRecorder?.stop()
+        mediaRecorder?.release()
+        startRecordButton.visibility = View.VISIBLE
+        stopRecordButton.visibility = View.GONE
+    }
+
+    private fun playRecording() {
+        if (saveAudioPath == "") {
+            Toast.makeText(activity, "No recordings saved!", Toast.LENGTH_SHORT).show()
+            return
+        }
+        mediaPlayer = MediaPlayer()
+        mediaPlayer?.setDataSource(saveAudioPath)
+        mediaPlayer?.prepare()
+        mediaPlayer?.start()
+        mediaPlayer?.setOnCompletionListener{ stopPlayRecording() }
+        playRecordButton.visibility = View.GONE
+        stopPlayRecordButton.visibility = View.VISIBLE
+    }
+
+    private fun stopPlayRecording() {
+        if (mediaPlayer?.isPlaying == true) {
+            mediaPlayer?.stop()
+        }
+        mediaPlayer?.release()
+        playRecordButton.visibility = View.VISIBLE
+        stopPlayRecordButton.visibility = View.GONE
     }
 
     private fun setUpBluetoothManager() {
@@ -731,6 +833,15 @@ class ScannerFragment : Fragment() {
             gestureSelection4 -> {
                 // run task 4
                 tasks?.spotifyNext()
+                return
+            }
+            gestureSelection5 -> {
+                if (startRecordButton.visibility == View.VISIBLE) {
+                    startRecording()
+                }
+                else {
+                    stopRecording()
+                }
                 return
             }
         }
