@@ -74,6 +74,10 @@ class ScannerFragment : Fragment() {
     private lateinit var stopRecordButton: Button
     private lateinit var playRecordButton: Button
     private lateinit var stopPlayRecordButton: Button
+    private lateinit var spinner6: Spinner
+    private lateinit var websiteText: TextView
+    private lateinit var websiteEditText: EditText
+    private lateinit var websiteButton: Button
 
     // Calibration
     private lateinit var calibTitle: TextView
@@ -107,6 +111,8 @@ class ScannerFragment : Fragment() {
     private var saveAudioPath: String = ""
     private var mediaPlayer: MediaPlayer? = null
     private var mediaRecorder: MediaRecorder? = null
+    private var gestureSelection6: Int = 0
+    private var websiteUrl: String = ""
 
     // FSR raw values (range 0 to 255)
     // 0 is no force, 255 is high force
@@ -348,6 +354,34 @@ class ScannerFragment : Fragment() {
         stopRecordButton.setOnClickListener{ stopRecording() }
         playRecordButton.setOnClickListener { playRecording() }
         stopPlayRecordButton.setOnClickListener{ stopPlayRecording() }
+        // Task 6
+        spinner6 = view.findViewById(R.id.spinner6)
+        spinner6.onItemSelectedListener = (object : OnItemSelectedListener {
+            override fun onItemSelected(parent: AdapterView<*>?, view: View?, position: Int, id: Long) {
+                gestureSelection6 = position
+                Log.e("MACROSNAP","Task 6 gesture $gestureSelection6")
+            }
+            override fun onNothingSelected(parent: AdapterView<*>?) {
+                gestureSelection6 = 0
+            }
+        })
+        activity?.let {
+            ArrayAdapter.createFromResource(
+                it,
+                R.array.gesture_types,
+                android.R.layout.simple_spinner_item
+            ).also { adapter ->
+                // Specify the layout to use when the list of choices appears
+                adapter.setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item)
+                // Apply the adapter to the spinner
+                spinner6.adapter = adapter
+            }
+        }
+        websiteText = view.findViewById(R.id.website_text)
+        websiteEditText = view.findViewById(R.id.websiteEditText)
+        websiteButton = view.findViewById(R.id.websiteButton)
+        websiteButton.setOnClickListener { onWebsiteButtonClick() }
+        websiteUrl = websiteText.text.toString()
         // Calibration
         calibTitle = view.findViewById(R.id.calib_title)
         progressText = view.findViewById(R.id.gesture_progress)
@@ -507,6 +541,29 @@ class ScannerFragment : Fragment() {
         mediaPlayer?.release()
         playRecordButton.visibility = View.VISIBLE
         stopPlayRecordButton.visibility = View.GONE
+    }
+
+    private fun onWebsiteButtonClick() {
+        if (websiteEditText.visibility == View.GONE) {
+            websiteText.visibility = View.GONE
+            websiteEditText.visibility = View.VISIBLE
+            websiteButton.setText("Save website")
+        }
+        else {
+            if (websiteEditText.text.isNotEmpty()) {
+                websiteText.text = websiteEditText.text.toString()
+                websiteUrl = websiteEditText.text.toString()
+            }
+            else {
+                websiteUrl = websiteText.text.toString()
+            }
+            val imm: InputMethodManager =
+                this.context?.getSystemService(Context.INPUT_METHOD_SERVICE) as InputMethodManager
+            imm.hideSoftInputFromWindow(view?.windowToken, 0)
+            websiteText.visibility = View.VISIBLE
+            websiteEditText.visibility = View.GONE
+            websiteButton.setText("Change website")
+        }
     }
 
     private fun setUpBluetoothManager() {
@@ -842,6 +899,10 @@ class ScannerFragment : Fragment() {
                 else {
                     stopRecording()
                 }
+                return
+            }
+            gestureSelection6 -> {
+                tasks?.website(websiteUrl)
                 return
             }
         }

@@ -74,4 +74,12 @@ public class Tasks(val context: Context) {
         Log.i("TASK", "spotify next")
     }
 
+    public fun website (url: String) {
+        val intent = Intent(Intent.ACTION_VIEW, Uri.parse(url))
+        if (intent.resolveActivity(context.packageManager) != null) {
+            context.startActivity(intent)
+        }
+        Log.i("PRINT", "website")
+    }
+
 }

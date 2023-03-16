@@ -431,6 +431,71 @@
 
                 </LinearLayout>
 
+                <LinearLayout
+                    android:layout_width="fill_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="vertical"
+                    android:background="@color/colorPrimary"
+                    android:layout_marginBottom="10dp">
+
+                    <LinearLayout
+                        android:layout_width="fill_parent"
+                        android:layout_height="wrap_content"
+                        android:layout_margin="10dp"
+                        android:orientation="horizontal">
+                        <TextView
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:layout_gravity="center"
+                            android:text="Task 6 Gesture:" />
+
+                        <Spinner
+                            android:id="@+id/spinner6"
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:layout_margin="10dp" />
+
+                    </LinearLayout>
+
+                    <TextView
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:layout_gravity="center"
+                        android:text="Open website: " />
+
+                    <TextView
+                        android:id="@+id/website_text"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:layout_gravity="center"
+                        android:layout_margin="10dp"
+                        android:text="https://piezosaurus.github.io/"
+                        />
+
+                    <EditText
+                        android:id="@+id/websiteEditText"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:layout_centerInParent="true"
+                        android:layout_margin="10dp"
+                        android:textSize="20sp"
+                        android:hint="Enter website link"
+                        android:visibility="gone" />
+
+                    <Button
+                        android:id="@+id/websiteButton"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:layout_margin="10dp"
+                        android:layout_weight="1"
+                        android:background="@color/colorPrimaryDark"
+                        android:clickable="true"
+                        android:focusable="true"
+                        android:textColor="@color/white"
+                        android:text="Change website" />
+
+                </LinearLayout>
+
             </LinearLayout>
 
             <!-- 2nd View -->
