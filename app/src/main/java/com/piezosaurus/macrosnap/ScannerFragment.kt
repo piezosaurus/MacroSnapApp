@@ -789,17 +789,17 @@ class ScannerFragment : Fragment() {
 
     private fun loadModel() {
         debugTextView.text = "Calibration required"
-//        val xFile = File(this.context?.filesDir,"x.txt")
-//        val yFile = File(this.context?.filesDir,"y.txt")
-//        if(xFile.exists() && yFile.exists()){
-//            Log.e("MACROSNAP","Dataset files found.")
-//            debugTextView.text = "Found saved calibration"
-//            val (x, y) = readData()
-//            trainKNN(x, y)
-//        } else {
-//            Log.e("MACROSNAP","Dataset files not found.")
-//            debugTextView.text = "Calibration required"
-//        }
+        val xFile = File(this.context?.filesDir,"x.txt")
+        val yFile = File(this.context?.filesDir,"y.txt")
+        if(xFile.exists() && yFile.exists()){
+            Log.e("MACROSNAP","Dataset files found.")
+            debugTextView.text = "Found saved calibration"
+            val (x, y) = readData()
+            trainKNN(x, y)
+        } else {
+            Log.e("MACROSNAP","Dataset files not found.")
+            debugTextView.text = "Calibration required"
+        }
     }
 
     private fun updateGraph(fsr1: Int, fsr2: Int, fsr3: Int) {
